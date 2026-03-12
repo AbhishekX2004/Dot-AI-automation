@@ -105,7 +105,7 @@ echo "Generating secure authentication token..."
 # SHARED_AUTH_TOKEN="testing"
 SHARED_AUTH_TOKEN=$(openssl rand -base64 32)
 
-# --- AUTOMATED CROSS-CLUSTER KUBECONFIG INJECTION ---
+# AUTOMATED CROSS-CLUSTER KUBECONFIG INJECTION
 echo "----------------------------------------------"
 echo "Extracting Client 1 Kubeconfig & Injecting into Hub..."
 
@@ -150,7 +150,7 @@ helm upgrade --install dot-ai-stack ./dot-ai-stack \
   --set dot-ai-ui.ingress.host=dot-ai-ui.$BASE_DOMAIN \
   --wait 2>&1 | tee "$HELM_LOG"
 
-# --- REMOTE SANDBOX PREPARATION ---
+# REMOTE SANDBOX PREPARATION
 echo "----------------------------------------------"
 echo "Preparing Remote Sandbox on client-1..."
 
