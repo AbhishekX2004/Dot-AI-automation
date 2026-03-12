@@ -1,0 +1,21 @@
+{{- if .Values.serviceAccount.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "dot-ai.fullname" . }}
+  labels:
+    {{- include "dot-ai.labels" . | nindent 4 }}
+  {{- $annotations := include "dot-ai.annotations" (dict "global" .Values.annotations "local" nil) -}}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "dot-ai.fullname" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "dot-ai.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

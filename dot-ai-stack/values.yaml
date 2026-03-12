@@ -1,0 +1,77 @@
+# dot-ai-stack umbrella chart values
+# Override sub-chart values by nesting under the chart name
+
+# Hub-and-Spoke: Remote cluster kubeconfig injection (optional)
+# When configured, controllers and plugins will use this kubeconfig
+# to operate on a remote client cluster instead of the local in-cluster config.
+# The Secret must exist in the same namespace and contain a key named "config"
+# with the full kubeconfig YAML for the remote cluster.
+# remoteCluster:
+#   secretName: "client-cluster-kubeconfig"
+
+# dot-ai MCP server configuration (core component - always deployed)
+# Docs: https://devopstoolkit.ai/docs/mcp/setup/kubernetes-setup
+dot-ai:
+  # Fixed service name so dot-ai-ui can find it at http://dot-ai:3456
+  fullnameOverride: dot-ai
+  # Enable local embeddings to use in-cluster HuggingFace TEI for semantic search
+  # without requiring external embedding API keys (recommended for new installations)
+  # localEmbeddings:
+  #   enabled: true
+  # Example overrides:
+  # secrets:
+  #   anthropic:
+  #     apiKey: "your-api-key"
+  #   openai:
+  #     apiKey: "your-api-key"
+  #   auth:
+  #     token: "your-auth-token"
+  # ingress:
+  #   enabled: true
+  #   className: nginx
+  # webUI:
+  #   baseUrl: "http://dot-ai-ui.example.com"  # Should match dot-ai-ui.ingress.host
+
+# dot-ai-controller configuration
+# Docs: https://devopstoolkit.ai/docs/controller/setup-guide
+dot-ai-controller:
+  # Set to false to disable the controller (e.g., for MCP-only usage)
+  enabled: true
+  fullnameOverride: dot-ai-controller
+  # Example overrides:
+  # resources:
+  #   limits:
+  #     cpu: 1000m
+  #     memory: 1Gi
+
+# dot-ai-ui web interface configuration
+# Docs: https://devopstoolkit.ai/docs/ui/setup/kubernetes-setup
+dot-ai-ui:
+  # Set to false to disable the web UI
+  enabled: true
+  fullnameOverride: dot-ai-ui
+  # Example overrides:
+  # dotAi:
+  #   auth:
+  #     token: "your-auth-token"  # Must match dot-ai secrets.auth.token
+  # uiAuth:
+  #   token: "your-ui-auth-token"  # Token to access the Web UI dashboard
+  #   secretRef:
+  #     name: ""                   # Or reference existing secret (recommended for production)
+  #     key: "ui-auth-token"
+  # ingress:
+  #   enabled: true
+  #   host: dot-ai-ui.example.com  # Set dot-ai.webUI.baseUrl to enable MCP links to UI
+
+# ResourceSyncConfig - enables resource discovery and semantic search
+# Docs: https://devopstoolkit.ai/docs/controller/resource-sync-guide
+resourceSync:
+  enabled: true
+  # debounceWindowSeconds: 30    # Seconds to wait before syncing after a change (default: 10, max: 300)
+  # resyncIntervalMinutes: 120   # Minutes between full resyncs (default: 60, max: 1440)
+
+# CapabilityScanConfig - enables cluster capability discovery
+# Docs: https://devopstoolkit.ai/docs/controller/capability-scan-guide
+capabilityScan:
+  enabled: true
+  # debounceWindowSeconds: 30    # Seconds to wait before scanning after a change (default: 10, max: 300)

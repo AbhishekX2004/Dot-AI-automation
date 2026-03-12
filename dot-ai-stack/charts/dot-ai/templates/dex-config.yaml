@@ -1,0 +1,55 @@
+{{/*
+Dex configuration — credentials are externalized to a user-managed Secret.
+
+The user creates a Secret (referenced by .Values.dex.existingSecret) containing:
+  - DEX_CLIENT_SECRET: OAuth2 client secret for the dot-ai static client
+  - DOT_AI_JWT_SECRET: JWT signing key for MCP server tokens
+
+The admin bcrypt hash is provided directly via .Values.dex.adminPasswordHash.
+
+This template only creates the Dex config.yaml Secret — no credentials are generated.
+*/}}
+{{- if .Values.dex.enabled }}
+{{- $_ := required "dex.existingSecret is required when dex.enabled=true. Create a Secret with DEX_CLIENT_SECRET and DOT_AI_JWT_SECRET keys, then set dex.existingSecret to its name." .Values.dex.existingSecret }}
+{{- $_ := required "dex.adminPasswordHash is required when dex.enabled=true. Provide a bcrypt hash for the admin@dot-ai.local static password." .Values.dex.adminPasswordHash }}
+{{- $dexExternalUrl := required "Dex issuer URL is required. Set .Values.dex.externalUrl or configure ingress/gateway hostnames." (include "dot-ai.dexExternalUrl" . | trim) }}
+{{- $dotAiExternalUrl := required "dot-ai external URL is required. Set .Values.externalUrl or configure ingress/gateway hostnames." (include "dot-ai.externalUrl" . | trim) }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ default "dex" .Values.dex.configSecret.name }}
+  labels:
+    {{- include "dot-ai.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  config.yaml: |
+    issuer: {{ $dexExternalUrl }}
+    frontend:
+      dir: /srv/dex/web
+      issuer: "DevOps AI Toolkit"
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+    enablePasswordDB: true
+    oauth2:
+      skipApprovalScreen: true
+      responseTypes:
+        - code
+    staticClients:
+      - id: dot-ai
+        name: "dot-ai MCP Server"
+        secretEnv: DEX_CLIENT_SECRET
+        redirectURIs:
+          - "{{ $dotAiExternalUrl }}/callback"
+    staticPasswords:
+      - email: "admin@dot-ai.local"
+        hash: {{ .Values.dex.adminPasswordHash | quote }}
+        username: "admin"
+        userID: "00000000-0000-0000-0000-000000000001"
+    {{- if .Values.dex.connectors }}
+    connectors:
+      {{- toYaml .Values.dex.connectors | nindent 6 }}
+    {{- end }}
+{{- end }}

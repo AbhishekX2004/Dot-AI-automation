@@ -1,0 +1,27 @@
+=== dot-ai installed ===
+
+{{ if .Values.dex.enabled -}}
+OAuth authentication is enabled via Dex OIDC provider.
+
+Credentials secret: {{ .Values.dex.existingSecret }}
+Built-in admin:     admin@dot-ai.local (password is whatever you hashed in dex.adminPasswordHash)
+
+IMPORTANT: Ensure dex.envFrom includes your existingSecret so Dex can read DEX_CLIENT_SECRET:
+  dex:
+    envFrom:
+      - secretRef:
+          name: {{ .Values.dex.existingSecret }}
+
+MCP clients authenticate via OAuth2 Authorization Code flow with PKCE.
+Authorization server metadata:
+  {{ include "dot-ai.externalUrl" . }}/.well-known/oauth-authorization-server
+
+{{- if .Values.dex.connectors }}
+
+Configured IdP connectors: {{ len .Values.dex.connectors }}
+{{- end }}
+{{ else -}}
+Authentication: Legacy bearer token mode.
+  Set secrets.auth.token in values.yaml or create the Secret externally.
+  Enable dex.enabled=true for OAuth/OIDC authentication.
+{{ end -}}

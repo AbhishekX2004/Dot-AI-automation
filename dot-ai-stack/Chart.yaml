@@ -1,0 +1,18 @@
+apiVersion: v2
+appVersion: 0.67.0
+dependencies:
+- name: dot-ai
+  repository: oci://ghcr.io/vfarcic/dot-ai/charts
+  version: 1.7.0
+- condition: dot-ai-controller.enabled
+  name: dot-ai-controller
+  repository: oci://ghcr.io/vfarcic/dot-ai-controller/charts
+  version: 0.48.0
+- condition: dot-ai-ui.enabled
+  name: dot-ai-ui
+  repository: oci://ghcr.io/vfarcic/dot-ai-ui/charts
+  version: 0.13.0
+description: Complete dot-ai stack - MCP server, controller, and UI
+name: dot-ai-stack
+type: application
+version: 0.67.0

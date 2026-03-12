@@ -1,0 +1,87 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dot-ai-controller.fullname" . }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dot-ai-controller.labels" . | nindent 4 }}
+    control-plane: controller-manager
+  {{- $annotations := include "dot-ai-controller.annotations" (dict "global" .Values.annotations "local" nil) -}}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dot-ai-controller.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+  template:
+    metadata:
+      {{- $podAnnotations := include "dot-ai-controller.annotations" (dict "global" .Values.annotations "local" (dict "kubectl.kubernetes.io/default-container" "manager")) -}}
+      {{- if $podAnnotations }}
+      annotations:
+        {{- $podAnnotations | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dot-ai-controller.selectorLabels" . | nindent 8 }}
+        control-plane: controller-manager
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+{{- if .Values.remoteCluster.secretName }}
+        env:
+        - name: KUBECONFIG
+          value: "/external-cluster/config"
+{{- end }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: tmp-dir
+          mountPath: /tmp
+{{- if .Values.remoteCluster.secretName }}
+        - name: remote-kubeconfig
+          mountPath: /external-cluster
+          readOnly: true
+{{- end }}
+      volumes:
+      - name: tmp-dir
+        emptyDir: {}
+{{- if .Values.remoteCluster.secretName }}
+      - name: remote-kubeconfig
+        secret:
+          secretName: {{ .Values.remoteCluster.secretName }}
+{{- end }}
+      serviceAccountName: {{ include "dot-ai-controller.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 1260

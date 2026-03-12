@@ -1,0 +1,12 @@
+dependencies:
+- name: dot-ai
+  repository: oci://ghcr.io/vfarcic/dot-ai/charts
+  version: 1.7.0
+- name: dot-ai-controller
+  repository: oci://ghcr.io/vfarcic/dot-ai-controller/charts
+  version: 0.48.0
+- name: dot-ai-ui
+  repository: oci://ghcr.io/vfarcic/dot-ai-ui/charts
+  version: 0.13.0
+digest: sha256:71c217338b957964079bec49f709e2b74686fbc949e910f253778f1db9a17d95
+generated: "2026-03-09T14:20:29.824274684Z"

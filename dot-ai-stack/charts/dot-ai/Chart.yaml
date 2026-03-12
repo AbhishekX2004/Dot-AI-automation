@@ -1,0 +1,31 @@
+annotations:
+  category: Developer Tools
+apiVersion: v2
+appVersion: 1.7.0
+dependencies:
+- condition: qdrant.enabled
+  name: qdrant
+  repository: https://qdrant.github.io/qdrant-helm
+  version: 1.15.5
+- condition: dex.enabled
+  name: dex
+  repository: https://charts.dexidp.io
+  version: 0.24.0
+description: DevOps AI Toolkit - Intelligent Kubernetes deployment agent with AI-powered
+  recommendations
+home: https://github.com/vfarcic/dot-ai
+keywords:
+- devops
+- ai
+- kubernetes
+- deployment
+- mcp
+- gateway-api
+maintainers:
+- email: viktor@farcic.com
+  name: Viktor Farcic
+name: dot-ai
+sources:
+- https://github.com/vfarcic/dot-ai
+type: application
+version: 1.7.0

@@ -1,0 +1,31 @@
+# Default values for dot-ai-controller
+
+# Global annotations applied to ALL Kubernetes resources
+# Use for tools like Reloader, compliance requirements, or consistent metadata
+annotations: {}
+  # Example: Reloader integration
+  # reloader.stakater.com/auto: "true"
+  # Example: Compliance/audit
+  # company.com/managed-by: "platform-team"
+
+# Image configuration
+image:
+  repository: ghcr.io/vfarcic/dot-ai-controller
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion
+  tag: ""
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 10m
+    memory: 128Mi
+
+# Hub-and-Spoke: Remote cluster kubeconfig (optional)
+# When secretName is set, the kubeconfig secret is mounted at /external-cluster/config
+# and KUBECONFIG env var is set, so the controller operates on the remote cluster.
+remoteCluster: {}
+  # secretName: ""   # Name of pre-existing Secret containing "config" key

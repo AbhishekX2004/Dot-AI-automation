@@ -1,0 +1,113 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    {{- include "dot-ai-controller.labels" . | nindent 4 }}
+  name: {{ include "dot-ai-controller.clusterRoleName" . }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - update
+- apiGroups:
+  - dot-ai.devopstoolkit.live
+  resources:
+  - capabilityscanconfigs
+  - gitknowledgesources
+  - resourcesyncconfigs
+  - solutions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dot-ai.devopstoolkit.live
+  resources:
+  - capabilityscanconfigs/finalizers
+  - gitknowledgesources/finalizers
+  - resourcesyncconfigs/finalizers
+  - solutions/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - dot-ai.devopstoolkit.live
+  resources:
+  - capabilityscanconfigs/status
+  - gitknowledgesources/status
+  - remediationpolicies/status
+  - resourcesyncconfigs/status
+  - solutions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - dot-ai.devopstoolkit.live
+  resources:
+  - remediationpolicies
+  verbs:
+  - get
+  - list
+  - watch
