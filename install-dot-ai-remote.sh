@@ -102,8 +102,8 @@ fi
 
 # Generate Authentication Tokens (UNIFIED to prevent 401 errors)
 echo "Generating secure authentication token..."
-SHARED_AUTH_TOKEN="testing"
-# SHARED_AUTH_TOKEN=$(openssl rand -base64 32)
+# SHARED_AUTH_TOKEN="testing"
+SHARED_AUTH_TOKEN=$(openssl rand -base64 32)
 
 # --- AUTOMATED CROSS-CLUSTER KUBECONFIG INJECTION ---
 echo "----------------------------------------------"

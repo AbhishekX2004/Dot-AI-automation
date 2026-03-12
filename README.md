@@ -13,8 +13,6 @@ Traditionally, the Dot-AI stack is designed to monitor the cluster it is install
 
 ## Quick Start (The "Two Command" Setup)
 
-We have automated ~8 hours of architectural debugging into two scripts.
-
 **Step 1: Spin up the Client Cluster**
 This creates a lightweight `client-1` cluster and deploys a frontend, a backend cache, and a intentionally broken "chaos" pod for the AI to debug.
 ```bash
