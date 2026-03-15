@@ -1,0 +1,13 @@
+# Terraform state
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+
+# Variable overrides (contain sensitive values)
+terraform.tfvars
+*.auto.tfvars
+
+# Crash log
+crash.log
