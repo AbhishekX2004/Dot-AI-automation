@@ -15,6 +15,6 @@
 #     key            = "dot-ai/eks-cluster/terraform.tfstate"
 #     region         = "us-east-1"                  # <-- must match aws_region
 #     encrypt        = true
-#     dynamodb_table = "terraform-lock"             # <-- DynamoDB table for locking
+#     use_lockfile = true                           # <-- Enables S3-native locking
 #   }
 # }

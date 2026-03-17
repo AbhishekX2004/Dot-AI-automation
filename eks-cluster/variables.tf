@@ -50,11 +50,7 @@ variable "cluster_name" {
 }
 
 variable "cluster_version" {
-  description = <<-EOT
-    Kubernetes version for the EKS cluster.
-    Run `aws eks describe-addon-versions --query 'addons[0].addonVersions[*].compatibilities[*].clusterVersion'`
-    to list versions currently supported by EKS.
-  EOT
+  description = "Kubernetes version for the EKS cluster."
   type        = string
   default     = "1.35"
 }
