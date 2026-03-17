@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+# =============================================================================
+# onboard-client.sh — Dot-AI Client Onboarding Script
+# =============================================================================
+# Usage:
+#   ./onboard-client.sh <vars-file>
+#
+# Example:
+#   cp client.vars acme-corp.vars
+#   # edit acme-corp.vars
+#   ./onboard-client.sh acme-corp.vars
+#
+# What this script does:
+#   1.  Loads and validates the client vars file
+#   2.  Fetches the client kubeconfig (EKS / GKE / ACP / file)
+#   3.  Creates a dedicated namespace on the Hub for this client
+#   4.  Injects the client kubeconfig as a Hub Secret
+#   5.  Deploys a scoped dot-ai Helm release into the client namespace
+#   6.  Bootstraps the client cluster (namespace, CRDs, sync config, secrets)
+#   7.  Restarts the Hub controller to trigger a clean sync
+#
+# Prerequisites:
+#   kubectl, helm, openssl
+#   aws CLI    (for CLOUD_PROVIDER=eks)
+#   gcloud CLI (for CLOUD_PROVIDER=gke)
+#   curl       (for CLOUD_PROVIDER=acp)
+# =============================================================================
+set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+
+log()     { echo -e "${CYAN}[INFO]${NC}  $*"; }
+success() { echo -e "${GREEN}[OK]${NC}    $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+section() { echo ""; echo -e "${CYAN}══════════════════════════════════════════${NC}"; echo -e "${CYAN}  $*${NC}"; echo -e "${CYAN}══════════════════════════════════════════${NC}"; }
+
+require_cmd() { command -v "$1" &>/dev/null || error "Required command not found: $1. Please install it."; }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. Load Vars File
+# ─────────────────────────────────────────────────────────────────────────────
+
+VARS_FILE="${1:-}"
+[[ -z "$VARS_FILE" ]] && error "Usage: $0 <vars-file>\n  Example: $0 acme-corp.vars"
+[[ -f "$VARS_FILE" ]] || error "vars file not found: $VARS_FILE"
+
+# shellcheck source=/dev/null
+source "$VARS_FILE"
+log "Loaded config from: $VARS_FILE"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Validate Required Fields
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "Validating Configuration"
+
+_require_var() {
+  local name="$1" value="${!1:-}"
+  [[ -n "$value" ]] || error "Required variable \$$name is not set in $VARS_FILE"
+}
+
+_require_var CLIENT_ID
+_require_var HUB_CONTEXT
+_require_var CLOUD_PROVIDER
+_require_var BASE_DOMAIN
+_require_var INGRESS_CLASS
+_require_var AI_PROVIDER
+_require_var AI_API_KEY
+
+# Validate CLIENT_ID format (lowercase letters, numbers, hyphens only)
+if ! echo "$CLIENT_ID" | grep -qE '^[a-z0-9][a-z0-9-]*[a-z0-9]$'; then
+  error "CLIENT_ID '$CLIENT_ID' is invalid. Use only lowercase letters, numbers, and hyphens (e.g. acme-corp)."
+fi
+
+# Validate CLOUD_PROVIDER
+case "$CLOUD_PROVIDER" in
+  eks|gke|acp|file) ;;
+  *) error "CLOUD_PROVIDER must be one of: eks, gke, acp, file. Got: $CLOUD_PROVIDER" ;;
+esac
+
+# Validate AI_PROVIDER
+case "$AI_PROVIDER" in
+  openai|anthropic) ;;
+  *) error "AI_PROVIDER must be 'openai' or 'anthropic'. Got: $AI_PROVIDER" ;;
+esac
+
+# Set defaults for optional vars
+HELM_TIMEOUT="${HELM_TIMEOUT:-600}"
+HELM_CHART_PATH="${HELM_CHART_PATH:-./dot-ai-stack}"
+LOCAL_EMBEDDINGS="${LOCAL_EMBEDDINGS:-true}"
+CLIENT_DOT_AI_NAMESPACE="${CLIENT_DOT_AI_NAMESPACE:-dot-ai}"
+INGRESS_CLASS="${INGRESS_CLASS:-nginx}"
+
+# Derived names
+HUB_NAMESPACE="$CLIENT_ID"
+HELM_RELEASE="dot-ai-${CLIENT_ID}"
+SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
+TMP_KUBECONFIG=$(mktemp /tmp/dot-ai-client-kubeconfig-XXXXXX)
+# Ensure temp file is cleaned up on exit
+trap 'rm -f "$TMP_KUBECONFIG"' EXIT
+
+success "Configuration valid. Client ID: $CLIENT_ID | Provider: $CLOUD_PROVIDER"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Check Prerequisites
+# ─────────────────────────────────────────────────────────────────────────────
+
+require_cmd kubectl
+require_cmd helm
+require_cmd openssl
+
+case "$CLOUD_PROVIDER" in
+  eks)  require_cmd aws     ;;
+  gke)  require_cmd gcloud  ;;
+  acp)  require_cmd curl    ;;
+esac
+
+# Verify Helm chart exists
+[[ -d "$HELM_CHART_PATH" ]] || error "Helm chart not found at: $HELM_CHART_PATH"
+
+# Verify Hub context exists
+kubectl config get-contexts "$HUB_CONTEXT" &>/dev/null \
+  || error "kubectl context '$HUB_CONTEXT' not found. Run: kubectl config get-contexts"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Fetch Client Kubeconfig
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "Fetching Client Cluster Kubeconfig (${CLOUD_PROVIDER})"
+
+case "$CLOUD_PROVIDER" in
+
+  # ── EKS ──────────────────────────────────────────────────────────────────
+  eks)
+    _require_var AWS_REGION
+    _require_var EKS_CLUSTER_NAME
+
+    log "Fetching EKS kubeconfig for cluster: $EKS_CLUSTER_NAME in $AWS_REGION"
+
+    AWS_PROFILE_ARG=""
+    [[ -n "${AWS_PROFILE:-}" ]] && AWS_PROFILE_ARG="--profile $AWS_PROFILE"
+
+    # shellcheck disable=SC2086
+    aws eks update-kubeconfig \
+      --name "$EKS_CLUSTER_NAME" \
+      --region "$AWS_REGION" \
+      --kubeconfig "$TMP_KUBECONFIG" \
+      $AWS_PROFILE_ARG
+
+    success "EKS kubeconfig written to temp file."
+    ;;
+
+  # ── GKE ──────────────────────────────────────────────────────────────────
+  gke)
+    _require_var GKE_PROJECT
+    _require_var GKE_CLUSTER_NAME
+    _require_var GKE_ZONE
+
+    log "Fetching GKE kubeconfig for cluster: $GKE_CLUSTER_NAME in $GKE_ZONE"
+
+    # gcloud writes to KUBECONFIG env-var path
+    KUBECONFIG="$TMP_KUBECONFIG" gcloud container clusters get-credentials \
+      "$GKE_CLUSTER_NAME" \
+      --project "$GKE_PROJECT" \
+      --zone "$GKE_ZONE"
+
+    success "GKE kubeconfig written to temp file."
+    ;;
+
+  # ── ACP / Generic bearer-token cluster ────────────────────────────────────
+  acp)
+    _require_var ACP_SERVER_URL
+    _require_var ACP_TOKEN
+
+    log "Building kubeconfig for ACP cluster: $ACP_SERVER_URL"
+
+    INSECURE_FLAG=""
+    [[ "${ACP_INSECURE:-false}" == "true" ]] && INSECURE_FLAG="insecure-skip-tls-verify: true"
+
+    # Build a minimal kubeconfig using the bearer token.
+    cat > "$TMP_KUBECONFIG" <<EOF
+apiVersion: v1
+kind: Config
+current-context: acp-${CLIENT_ID}
+clusters:
+- name: acp-${CLIENT_ID}
+  cluster:
+    server: ${ACP_SERVER_URL}
+    ${INSECURE_FLAG}
+contexts:
+- name: acp-${CLIENT_ID}
+  context:
+    cluster: acp-${CLIENT_ID}
+    user: acp-${CLIENT_ID}-user
+users:
+- name: acp-${CLIENT_ID}-user
+  user:
+    token: ${ACP_TOKEN}
+EOF
+
+    # Validate connectivity
+    if ! KUBECONFIG="$TMP_KUBECONFIG" kubectl version --short &>/dev/null; then
+      warn "Could not reach ACP cluster at $ACP_SERVER_URL. Continuing anyway — verify the URL and token."
+    else
+      success "ACP cluster reachable."
+    fi
+    ;;
+
+  # ── File ──────────────────────────────────────────────────────────────────
+  file)
+    _require_var KUBECONFIG_FILE
+    [[ -f "$KUBECONFIG_FILE" ]] || error "KUBECONFIG_FILE not found: $KUBECONFIG_FILE"
+
+    cp "$KUBECONFIG_FILE" "$TMP_KUBECONFIG"
+
+    # If a specific context was specified, switch to it
+    if [[ -n "${KUBECONFIG_FILE_CONTEXT:-}" ]]; then
+      KUBECONFIG="$TMP_KUBECONFIG" kubectl config use-context "$KUBECONFIG_FILE_CONTEXT" \
+        || error "Context '$KUBECONFIG_FILE_CONTEXT' not found in $KUBECONFIG_FILE"
+      log "Switched to context: $KUBECONFIG_FILE_CONTEXT"
+    fi
+
+    success "Kubeconfig loaded from file: $KUBECONFIG_FILE"
+    ;;
+esac
+
+# Store the context name we'll use to talk to the client cluster
+CLIENT_CONTEXT=$(KUBECONFIG="$TMP_KUBECONFIG" kubectl config current-context)
+log "Client cluster context: $CLIENT_CONTEXT"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Prepare Hub Namespace & Inject Kubeconfig Secret
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "Preparing Hub Namespace: $HUB_NAMESPACE"
+
+# Switch to Hub
+kubectl config use-context "$HUB_CONTEXT"
+
+# Create namespace (idempotent)
+kubectl create namespace "$HUB_NAMESPACE" \
+  --dry-run=client -o yaml | kubectl apply -f -
+success "Namespace '$HUB_NAMESPACE' ready on Hub."
+
+# Inject kubeconfig as a Secret
+kubectl create secret generic "$SECRET_NAME" \
+  --from-file=config="$TMP_KUBECONFIG" \
+  --namespace "$HUB_NAMESPACE" \
+  --dry-run=client -o yaml | kubectl apply -f -
+success "Secret '$SECRET_NAME' injected into namespace '$HUB_NAMESPACE'."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Generate Auth Token
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "Generating Authentication Token"
+
+SHARED_AUTH_TOKEN=$(openssl rand -base64 32)
+log "Shared auth token generated (will be printed at the end)."
+
+# Determine Helm secret key for the AI provider
+case "$AI_PROVIDER" in
+  openai)    AI_SECRET_KEY="openai.apiKey"    ;;
+  anthropic) AI_SECRET_KEY="anthropic.apiKey" ;;
+esac
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Helm Deployment
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "Deploying dot-ai Helm Release: $HELM_RELEASE"
+
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+HELM_LOG="dot-ai-helm-${CLIENT_ID}-${TIMESTAMP}.log"
+
+DOT_AI_API_HOST="dot-ai-${CLIENT_ID}.${BASE_DOMAIN}"
+DOT_AI_UI_HOST="dot-ai-ui-${CLIENT_ID}.${BASE_DOMAIN}"
+
+log "Helm log: $HELM_LOG"
+log "API host : $DOT_AI_API_HOST"
+log "UI host  : $DOT_AI_UI_HOST"
+
+helm upgrade --install "$HELM_RELEASE" "$HELM_CHART_PATH" \
+  --namespace "$HUB_NAMESPACE" \
+  --timeout "${HELM_TIMEOUT}s" \
+  --set dot-ai.remoteCluster.secretName="$SECRET_NAME" \
+  --set dot-ai-controller.remoteCluster.secretName="$SECRET_NAME" \
+  --set dot-ai.ai.provider="$AI_PROVIDER" \
+  --set dot-ai.secrets."$AI_SECRET_KEY"="$AI_API_KEY" \
+  --set dot-ai.secrets.auth.token="$SHARED_AUTH_TOKEN" \
+  --set dot-ai.localEmbeddings.enabled="$LOCAL_EMBEDDINGS" \
+  --set dot-ai.ingress.enabled=true \
+  --set dot-ai.ingress.className="$INGRESS_CLASS" \
+  --set dot-ai.ingress.host="$DOT_AI_API_HOST" \
+  --set dot-ai.webUI.baseUrl="http://${DOT_AI_UI_HOST}" \
+  --set dot-ai-ui.uiAuth.token="$SHARED_AUTH_TOKEN" \
+  --set dot-ai-ui.ingress.enabled=true \
+  --set dot-ai-ui.ingress.className="$INGRESS_CLASS" \
+  --set dot-ai-ui.ingress.host="$DOT_AI_UI_HOST" \
+  --wait \
+  2>&1 | tee "$HELM_LOG"
+
+success "Helm release '$HELM_RELEASE' deployed."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Bootstrap Client Cluster
+# ─────────────────────────────────────────────────────────────────────────────
+# Replicates the same 5 mitigations from the original install-dot-ai-remote.sh,
+# adapted for real cloud clusters (no Kind/Docker dependencies).
+
+section "Bootstrapping Client Cluster"
+
+# Shorthand — run kubectl against the client cluster (via temp kubeconfig)
+kc_client() {
+  KUBECONFIG="$TMP_KUBECONFIG" kubectl "$@"
+}
+
+# 7a. Create dot-ai namespace on client cluster (leader election requires it)
+log "7a. Creating '$CLIENT_DOT_AI_NAMESPACE' namespace on client cluster..."
+kc_client create namespace "$CLIENT_DOT_AI_NAMESPACE" \
+  --dry-run=client -o yaml | kc_client apply -f -
+success "Namespace '$CLIENT_DOT_AI_NAMESPACE' ready on client cluster."
+
+# 7b. Migrate CRDs from Hub to Client
+log "7b. Migrating Dot-AI CRDs from Hub to client cluster..."
+CRDS_TEMP=$(mktemp /tmp/dot-ai-crds-XXXXXX.yaml)
+trap 'rm -f "$TMP_KUBECONFIG" "$CRDS_TEMP"' EXIT
+
+kubectl get crds \
+  --context "$HUB_CONTEXT" \
+  --no-headers -o custom-columns=NAME:.metadata.name \
+  | grep -E 'devopstoolkit\.live' \
+  | xargs kubectl get crd \
+      --context "$HUB_CONTEXT" \
+      -o yaml \
+  > "$CRDS_TEMP"
+
+if [[ -s "$CRDS_TEMP" ]]; then
+  kc_client apply -f "$CRDS_TEMP"
+  success "CRDs migrated to client cluster."
+else
+  warn "No devopstoolkit.live CRDs found on Hub. Skipping CRD migration."
+fi
+
+# 7c. Apply ResourceSyncConfig on client cluster
+log "7c. Applying ResourceSyncConfig on client cluster..."
+SYNC_TEMP=$(mktemp /tmp/dot-ai-sync-XXXXXX.yaml)
+trap 'rm -f "$TMP_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP"' EXIT
+
+# The MCP endpoint points back to the Hub's dot-ai service using the Ingress
+# URL (since the client cluster is external and cannot reach Hub's ClusterIP).
+cat > "$SYNC_TEMP" <<EOF
+apiVersion: dot-ai.devopstoolkit.live/v1alpha1
+kind: ResourceSyncConfig
+metadata:
+  name: default-sync
+  namespace: ${CLIENT_DOT_AI_NAMESPACE}
+spec:
+  debounceWindowSeconds: 10
+  mcpAuthSecretRef:
+    key: auth-token
+    name: dot-ai-secrets
+  mcpEndpoint: http://${DOT_AI_API_HOST}/api/v1/resources/sync
+  resyncIntervalMinutes: 60
+EOF
+
+kc_client apply -f "$SYNC_TEMP"
+success "ResourceSyncConfig applied on client cluster."
+
+# 7d. Mirror dot-ai-secrets from Hub to Client
+log "7d. Mirroring dot-ai-secrets from Hub to client cluster..."
+SECRET_TEMP=$(mktemp /tmp/dot-ai-secret-XXXXXX.yaml)
+trap 'rm -f "$TMP_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
+
+kubectl get secret dot-ai-secrets \
+  --context "$HUB_CONTEXT" \
+  --namespace "$HUB_NAMESPACE" \
+  -o yaml \
+  | grep -v '^\s*uid:' \
+  | grep -v '^\s*resourceVersion:' \
+  | grep -v '^\s*creationTimestamp:' \
+  | grep -v '^\s*generation:' \
+  | grep -v '^\s*ownerReferences:' \
+  > "$SECRET_TEMP"
+
+# Force the namespace to the client-side dot-ai namespace
+sed -i "s/namespace: ${HUB_NAMESPACE}/namespace: ${CLIENT_DOT_AI_NAMESPACE}/g" "$SECRET_TEMP"
+
+kc_client apply -f "$SECRET_TEMP" --namespace "$CLIENT_DOT_AI_NAMESPACE"
+success "dot-ai-secrets mirrored to client cluster."
+
+# 7e. Restart Hub controller to trigger a clean remote sync
+log "7e. Restarting Hub controller pod for clean sync..."
+kubectl delete pods \
+  --context "$HUB_CONTEXT" \
+  --namespace "$HUB_NAMESPACE" \
+  --selector app.kubernetes.io/name=dot-ai-controller \
+  --ignore-not-found
+success "Hub controller pods restarted."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Done!
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "Onboarding Complete!"
+
+echo ""
+echo -e "  Client     : ${GREEN}${CLIENT_ID}${NC}"
+echo -e "  Provider   : ${GREEN}${CLOUD_PROVIDER}${NC}"
+echo -e "  Namespace  : ${GREEN}${HUB_NAMESPACE}${NC}"
+echo -e "  Helm Release: ${GREEN}${HELM_RELEASE}${NC}"
+echo ""
+echo -e "  ${CYAN}Access URLs${NC}"
+echo -e "  ┌─────────────────────────────────────────────────────────────────"
+echo -e "  │  Web UI   : ${GREEN}http://${DOT_AI_UI_HOST}/dashboard${NC}"
+echo -e "  │  MCP API  : ${GREEN}http://${DOT_AI_API_HOST}${NC}"
+echo -e "  └─────────────────────────────────────────────────────────────────"
+echo ""
+echo -e "  ${YELLOW}Auth Token : ${SHARED_AUTH_TOKEN}${NC}"
+echo ""
+echo -e "  ${CYAN}Helm log saved to: $HELM_LOG${NC}"
+echo ""
+echo -e "  Note: It may take 30–60 seconds for the UI to populate with client cluster resources."
+echo ""
