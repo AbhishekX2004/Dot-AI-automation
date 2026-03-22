@@ -42,7 +42,7 @@ CLOUD_PROVIDER=eks
 
 # --- EKS (set if CLOUD_PROVIDER=eks) ----------------------------------------
 AWS_REGION=us-east-1
-EKS_CLUSTER_NAME=client-prod-cluster
+EKS_CLUSTER_NAME=dot-ai-client-acme-corp
 # Optional: AWS profile to use. Leave blank to use the default/env-var profile.
 AWS_PROFILE=
 
@@ -90,7 +90,7 @@ INGRESS_CLASS=nginx
 AI_PROVIDER=openai
 
 # API key for the chosen provider.
-AI_API_KEY=sk-your-key-here
+AI_API_KEY=
 
 
 # -----------------------------------------------------------------------------

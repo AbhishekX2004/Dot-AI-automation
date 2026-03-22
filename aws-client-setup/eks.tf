@@ -15,7 +15,7 @@ data "aws_iam_policy_document" "eks_cluster_assume_role" {
 }
 
 resource "aws_iam_role" "eks_cluster" {
-  name               = "${var.cluster_name}-cluster-role"
+  name               = "${local.resolved_cluster_name}-cluster-role"
   assume_role_policy = data.aws_iam_policy_document.eks_cluster_assume_role.json
 }
 
@@ -36,8 +36,8 @@ resource "aws_iam_role_policy_attachment" "eks_vpc_resource_controller" {
 # =============================================================================
 
 resource "aws_security_group" "eks_cluster" {
-  name        = "${var.cluster_name}-cluster-sg"
-  description = "Additional security group for EKS cluster ${var.cluster_name}"
+  name        = "${local.resolved_cluster_name}-cluster-sg"
+  description = "Additional security group for client EKS cluster ${local.resolved_cluster_name}"
   vpc_id      = data.aws_vpc.default.id
 
   # Allow all outbound by default.
@@ -50,7 +50,7 @@ resource "aws_security_group" "eks_cluster" {
   }
 
   tags = {
-    Name = "${var.cluster_name}-cluster-sg"
+    Name = "${local.resolved_cluster_name}-cluster-sg"
   }
 }
 
@@ -59,7 +59,7 @@ resource "aws_security_group" "eks_cluster" {
 # =============================================================================
 
 resource "aws_eks_cluster" "this" {
-  name     = var.cluster_name
+  name     = local.resolved_cluster_name
   version  = var.cluster_version
   role_arn = aws_iam_role.eks_cluster.arn
 
@@ -79,7 +79,8 @@ resource "aws_eks_cluster" "this" {
   ]
 
   tags = {
-    Name = var.cluster_name
+    Name = local.resolved_cluster_name
+    Role = "client"
   }
 }
 
@@ -97,7 +98,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
   url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
 
   tags = {
-    Name = "${var.cluster_name}-oidc"
+    Name = "${local.resolved_cluster_name}-oidc"
   }
 }
 
@@ -118,7 +119,7 @@ data "aws_iam_policy_document" "node_group_assume_role" {
 }
 
 resource "aws_iam_role" "node_group" {
-  name               = "${var.cluster_name}-node-role"
+  name               = "${local.resolved_cluster_name}-node-role"
   assume_role_policy = data.aws_iam_policy_document.node_group_assume_role.json
 }
 
@@ -160,7 +161,7 @@ data "aws_iam_policy_document" "ebs_csi_driver_assume_role" {
 
 resource "aws_iam_role" "ebs_csi_driver" {
   count              = var.enable_ebs_csi_driver ? 1 : 0
-  name               = "${var.cluster_name}-ebs-role"
+  name               = "${local.resolved_cluster_name}-ebs-role"
   assume_role_policy = data.aws_iam_policy_document.ebs_csi_driver_assume_role[0].json
 }
 
@@ -176,7 +177,7 @@ resource "aws_iam_role_policy_attachment" "node_ebs_csi" {
 
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
-  node_group_name = var.node_group_name
+  node_group_name = local.resolved_node_group_name
   node_role_arn   = aws_iam_role.node_group.arn
 
   # Spread nodes across the selected subnets.
@@ -205,7 +206,8 @@ resource "aws_eks_node_group" "this" {
   ]
 
   tags = {
-    Name = var.node_group_name
+    Name = local.resolved_node_group_name
+    Role = "client"
   }
 
   # Lifecycle: ignore desired_size so external autoscalers can change it freely.
