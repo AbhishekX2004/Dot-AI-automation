@@ -1,8 +1,17 @@
-# AWS Client Setup -- Terraform Module
+# AWS Client Setup (Spoke Cluster)
 
-Provisions an **Amazon EKS cluster** intended to be onboarded as a **client** to the Dot-AI Hub via the `onboard-client.sh` script. Uses the **AWS default VPC** to avoid custom networking costs. Designed to be fully isolated and self-contained.
+This directory contains Terraform manifests to provision an **Amazon EKS cluster** designed to act as a **Spoke (Client)** in the Dot-AI Hub-and-Spoke architecture. Once provisioned, it is onboarded to the Hub using the root `onboard-client.sh` script.
 
-> **Purpose:** This directory creates the client-side infrastructure. The Hub cluster is created separately in `eks-cluster/`.
+> [!IMPORTANT]
+> This directory creates the client-side infrastructure. The **Hub** cluster (the "Brain") must be created separately in the [hub-eks-cluster/](../hub-eks-cluster/README.md) directory.
+
+---
+
+## Architecture Role
+
+In a typical setup, you have:
+1.  **One Hub Cluster:** Runs the Dot-AI agent, UI, and database.
+2.  **Multiple Client Clusters:** Managed by the Hub. This module provisions one such cluster.
 
 ---
 
@@ -10,13 +19,11 @@ Provisions an **Amazon EKS cluster** intended to be onboarded as a **client** to
 
 | Resource | Details |
 |---|---|
-| **EKS Cluster** | Named `dot-ai-client-<client_name>`, public + private API endpoint |
-| **Managed Node Group** | `t3.small` x 2 (min 1, max 4) |
-| **IAM Roles** | Cluster role + Node role with required AWS policies |
-| **OIDC Provider** | Enables IRSA (IAM Roles for Service Accounts) |
-| **EKS Add-ons** | CoreDNS, kube-proxy, VPC CNI, EBS CSI driver |
-| **Security Group** | Includes intra-VPC ingress on port 443 for Hub Controller access |
-| **Networking** | Uses default VPC + default subnets (no NAT Gateway) |
+| **EKS Cluster** | Name: `dot-ai-client-<client_name>`, version 1.35 |
+| **Managed Node Group** | 2x `t3.small` nodes (min 1, max 4) |
+| **Networking** | Uses AWS Default VPC (no NAT Gateway costs) |
+| **Security Group** | Permits HTTPS (443) from VPC CIDR for Hub-to-Client communication |
+| **Add-ons** | EBS CSI driver, VPC CNI, CoreDNS, kube-proxy |
 
 ---
 
@@ -24,54 +31,42 @@ Provisions an **Amazon EKS cluster** intended to be onboarded as a **client** to
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.6.0
 - [AWS CLI](https://aws.amazon.com/cli/) configured (`aws configure`)
-- IAM permissions to create EKS, EC2, IAM, and VPC resources
+- IAM permissions for EKS, EC2, VPC, and IAM.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Enter the module directory
 cd aws-client-setup/
 
-# 2. Copy and customise variables
+# 1. Customise variables
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars -- at minimum set client_name
+# Edit terraform.tfvars -- set 'client_name' (e.g. "acme-corp")
 
-# 3. Initialise providers
+# 2. Provision Cluster
 terraform init
+terraform apply --auto-approve
 
-# 4. Preview changes
-terraform plan -out=tfplan
-
-# 5. Apply
-terraform apply tfplan
-
-# 6. (Optional) Populate the cluster with demo workloads
-chmod +x setup-client-workloads.sh
+# 3. (Optional) Deploy Demo Workloads
 ./setup-client-workloads.sh
-
-# 7. View the onboarding values to copy into your client.vars file
-terraform output
 ```
 
 ---
 
-## End-to-End Onboarding Flow
+## Connecting to the Hub (Onboarding)
 
-```
-1. terraform apply              (this directory)
-   -- Provisions client EKS cluster on AWS
+After the `terraform apply` finishes, follow these steps to connect this cluster to your Hub:
 
-2. terraform output
-   -- Shows CLOUD_PROVIDER, AWS_REGION, EKS_CLUSTER_NAME
+1.  **Get Onboarding Values:** Run `terraform output` to see the settings needed.
+2.  **Create Vars File:** In the project root, create a file (e.g., `acme-corp.vars`) using [client.vars.example](../client.vars.example) as a template.
+3.  **Run Onboarding:**
+    ```bash
+    cd ..
+    ./onboard-client.sh acme-corp.vars
+    ```
 
-3. cp ../client.vars.example acme-corp.vars
-   -- Fill in the output values + Hub details
-
-4. cd .. && ./onboard-client.sh acme-corp.vars
-   -- Connects client cluster to the Hub
-```
+For a detailed breakdown of what happens during onboarding, see the [Onboard Client Script Breakdown](../docs/onboard-client-script-breakdown.md).
 
 ---
 

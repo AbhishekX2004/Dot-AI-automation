@@ -1,4 +1,4 @@
-# Automation Breakdown: Navigating the Pitfalls
+# Local Testing Script Breakdown: Navigating the Pitfalls
 
 The `install-dot-ai-remote.sh` script is the result of resolving cascading state and authentication failures caused by forcing a single-cluster tool into a multi-cluster architecture. Here is a breakdown of the custom automation blocks and the historical context behind them.
 

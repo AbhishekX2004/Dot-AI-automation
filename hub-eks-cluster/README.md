@@ -1,10 +1,18 @@
-# EKS Hub Cluster -- Terraform Module
+# Dot-AI Hub Cluster (EKS)
 
-Provisions the **Hub EKS cluster** for the Dot-AI Hub-and-Spoke architecture. This cluster runs the Dot-AI AI agent, controller, web UI, and vector database. Each onboarded client gets a dedicated namespace on this cluster containing a scoped Helm release.
+This directory contains Terraform manifests to provision the **Hub EKS cluster**. This cluster serves as the "Brain" of the Dot-AI deployment, hosting the AI agent, the management controller, the Web UI, and the Qdrant vector database.
 
-An NGINX Ingress Controller is deployed by default, backed by an AWS Network Load Balancer (NLB), to expose per-client Web UI and MCP API endpoints via host-based routing.
+> [NOTE]
+> Each managed **Client (Spoke)** cluster will have its own dedicated namespace and Helm release on this Hub cluster.
 
-> **Note:** This module uses the AWS default VPC to avoid NAT Gateway costs. For production deployments, consider using a dedicated VPC with private subnets and a NAT Gateway.
+---
+
+## Architecture Role
+
+The Hub cluster is the central management plane. It uses:
+- **NGINX Ingress:** To expose per-client dashboards and APIs via an AWS Network Load Balancer (NLB).
+- **Controller Manager:** To watch and sync resources from remote client clusters.
+- **Qdrant:** To store and query embeddings for AI-powered operations.
 
 ---
 
@@ -12,13 +20,11 @@ An NGINX Ingress Controller is deployed by default, backed by an AWS Network Loa
 
 | Resource | Details |
 |---|---|
-| **EKS Cluster** | Named `dot-ai-eks` (configurable), public + private API endpoint |
-| **Managed Node Group** | `t3.small` x 2 nodes (min 1, max 4, configurable) |
-| **IAM Roles** | Cluster role + Node role with required AWS policies |
-| **OIDC Provider** | Enables IRSA (IAM Roles for Service Accounts) |
-| **EKS Add-ons** | CoreDNS, kube-proxy, VPC CNI, EBS CSI driver |
-| **NGINX Ingress** | Helm-deployed ingress controller with NLB |
-| **Networking** | Default VPC + default subnets (no NAT Gateway) |
+| **EKS Cluster** | Name: `dot-ai-eks`, version 1.35 |
+| **Managed Node Group** | 2x `t3.small` nodes (min 1, max 4) |
+| **Ingress Controller** | NGINX Ingress with a public Network Load Balancer (NLB) |
+| **Networking** | Uses AWS Default VPC (no NAT Gateway costs) |
+| **Add-ons** | EBS CSI driver, VPC CNI, CoreDNS, kube-proxy |
 
 ---
 
@@ -26,54 +32,46 @@ An NGINX Ingress Controller is deployed by default, backed by an AWS Network Loa
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.6.0
 - [AWS CLI](https://aws.amazon.com/cli/) configured (`aws configure`)
-- IAM permissions to create EKS, EC2, IAM, and VPC resources
+- IAM permissions for EKS, EC2, VPC, and IAM.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Enter the module directory
-cd eks-cluster/
+cd hub-eks-cluster/
 
-# 2. Copy and customise variables
+# 1. Customise variables (optional)
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
 
-# 3. Initialise providers
+# 2. Provision Cluster
 terraform init
+terraform apply --auto-approve
 
-# 4. Preview changes
-terraform plan -out=tfplan
-
-# 5. Apply
-terraform apply tfplan
-
-# 6. Configure kubectl
+# 3. Configure Local Access
 aws eks update-kubeconfig --region us-east-1 --name dot-ai-eks
-
-# 7. Verify
-kubectl get nodes
 ```
 
 ---
 
 ## Post-Deployment: Retrieve the NLB IP
 
-After provisioning, retrieve the NLB IP address. This IP is required when configuring the `BASE_DOMAIN` in `client.vars` for client onboarding.
+Once the Hub is up, you need its public IP address to configure the `BASE_DOMAIN` for your clients.
 
 ```bash
-# Get the NLB hostname
+# 1. Get the NLB hostname
 NLB_HOST=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-# Resolve to an IP (NLB may have multiple IPs; use any one)
-dig +short "$NLB_HOST"
-
-# The BASE_DOMAIN for client.vars will be: <IP>.nip.io
+# 2. Resolve to an IP
+dig +short "$NLB_HOST" | head -n 1
 ```
 
-> **Important:** If you destroy and recreate this cluster, the NLB gets a new IP. You must update `BASE_DOMAIN` in all active client vars files and re-run `onboard-client.sh`.
+The resulting IP will be used in your `client.vars` files as:
+`BASE_DOMAIN=<NLB_IP>.nip.io`
+
+> [!IMPORTANT]
+> If you recreate this cluster, the NLB IP will change. You must update your `client.vars` and re-run the [onboarding script](../onboard-client.sh).
 
 ---
 

@@ -1,11 +1,24 @@
 # Dot-AI: Hub-and-Spoke Multi-Cluster DevOps Agent
 
-This repository provides a fully automated deployment of the Dot-AI DevOps agent in a multi-cluster **Hub-and-Spoke** topology. Dot-AI is an AI-powered Kubernetes operations agent. By default, it monitors the cluster it is installed on; this project decouples the AI agent (the Hub) from the infrastructure it manages (the Client/Spoke clusters), enabling a single Hub to manage multiple remote clusters.
+Dot-AI is an AI-powered Kubernetes operations agent. This repository provides a fully automated deployment of Dot-AI in a multi-cluster **Hub-and-Spoke** topology. 
 
-The project supports two deployment modes:
+By default, Dot-AI monitors the cluster it is installed on; this project decouples the AI agent (the **Hub**) from the infrastructure it manages (the **Clients/Spoke clusters**), enabling a single Hub to manage multiple remote clusters from a central dashboard.
 
-- **Local Development** -- uses Kind (Kubernetes IN Docker) clusters for rapid iteration on a single machine.
-- **Remote / Production** -- uses real EKS clusters on AWS, connected via the `onboard-client.sh` script.
+---
+
+## How the Setup Works
+
+The architecture is built on the concept of a **Remote Brain (Hub)** and **Managed Infrastructure (Clients)**.
+
+1.  **The Hub Cluster:** You provision a central EKS cluster (`hub-eks-cluster/`). This cluster runs the AI models, the Web UI, and the management controller. It exposes a public endpoint via an AWS Network Load Balancer (NLB).
+2.  **The client Clusters:** You provision one or more Spoke clusters (`aws-client-setup/`). These do not run the AI stack; they only host your workloads.
+3.  **The Onboarding Process:** You run the `onboard-client.sh` script. This script:
+    - Extracts a secure, cloud-agnostic kubeconfig from the Client cluster.
+    - Injects that kubeconfig into the Hub cluster.
+    - Deploys a "shadow" instance of the Dot-AI stack on the Hub that is permanently wired to the remote Client cluster.
+    - Bootstraps the Client cluster with the necessary CRDs and sync rules so it can report back to the Hub.
+
+The result is a single pane of glass where you can manage multiple clusters through a unified, AI-enhanced interface.
 
 ---
 
@@ -51,191 +64,67 @@ Each client gets its own isolated namespace on the Hub with a dedicated Helm rel
 
 ```
 .
-├── eks-cluster/              # Terraform: provisions the Hub EKS cluster + NGINX Ingress
+├── hub-eks-cluster/          # Terraform: provisions the Hub EKS cluster + NGINX Ingress
 ├── aws-client-setup/         # Terraform: provisions a Client EKS cluster
+├── local_testing/            # Scripts for running the full setup in Kind (Docker)
 ├── dot-ai-stack/             # Helm umbrella chart (dot-ai + controller + UI + qdrant)
 ├── onboard-client.sh         # Production onboarding script (EKS / GKE / ACP / file)
 ├── client.vars.example       # Template for client configuration
-├── install-dot-ai-remote.sh  # Local testing script (Kind clusters)
-├── setup-client.sh           # Local testing: creates a Kind client cluster
-└── docs/                     # Additional documentation
+└── docs/                     # Detailed architectural and script documentation
 ```
+
+---
+
+## Quick Start Guides
+
+Choose your deployment mode:
+
+### 1. Remote / Production (AWS EKS)
+- **Step 1:** Provision the [Hub Cluster](hub-eks-cluster/README.md).
+- **Step 2:** Provision a [Client Cluster](aws-client-setup/README.md).
+- **Step 3:** [Onboard the Client](onboard-client.sh) using a vars file.
+
+### 2. Local Development (Kind)
+- See the [Local Testing Guide](local_testing/README.md) to spin up two virtual clusters in Docker for rapid iteration without cloud costs.
 
 ---
 
 ## Prerequisites
 
-### For Remote / Production Deployment (EKS)
-
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.6.0
-- [AWS CLI](https://aws.amazon.com/cli/) configured with credentials (`aws configure`)
-- `kubectl`
-- `helm`
-- `openssl`
-- An OpenAI or Anthropic API Key
-
-### For Local Development (Kind)
-
-- Docker
-- [Kind](https://kind.sigs.k8s.io/) (Kubernetes IN Docker)
-- `kubectl`
-- `helm`
-- `openssl`
+- [AWS CLI](https://aws.amazon.com/cli/) configured (`aws configure`)
+- `kubectl`, `helm`, `openssl`
 - An OpenAI or Anthropic API Key
 
 ---
 
-## Remote Deployment Guide (EKS)
+## Additional Documentation
 
-### Step 1: Provision the Hub EKS Cluster
-
-```bash
-cd eks-cluster/
-terraform init
-terraform apply --auto-approve
-```
-
-This creates the Hub EKS cluster (`dot-ai-eks`) with an NGINX Ingress Controller and a public Network Load Balancer. See [eks-cluster/README.md](eks-cluster/README.md) for full details.
-
-After provisioning, configure kubectl and retrieve the NLB IP:
-
-```bash
-aws eks update-kubeconfig --region us-east-1 --name dot-ai-eks
-NLB_HOST=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-NLB_IP=$(dig +short "$NLB_HOST" | head -1)
-echo "NLB IP: $NLB_IP"
-```
-
-### Step 2: Provision the Client EKS Cluster
-
-```bash
-cd aws-client-setup/
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars -- set client_name (e.g. "acme-corp")
-terraform init
-terraform apply --auto-approve
-```
-
-Optionally deploy demo workloads:
-
-```bash
-./setup-client-workloads.sh
-```
-
-See [aws-client-setup/README.md](aws-client-setup/README.md) for full details.
-
-### Step 3: Onboard the Client to the Hub
-
-```bash
-cd ..   # Return to the repository root
-
-# Create a vars file for this client
-cp client.vars.example acme-corp.vars
-```
-
-Edit `acme-corp.vars` and fill in all required fields:
-
-| Field | Where to Get It |
-|---|---|
-| `CLIENT_ID` | Choose a unique slug (e.g. `acme-corp`) |
-| `HUB_CONTEXT` | Run `kubectl config get-contexts`, copy the Hub cluster ARN |
-| `CLOUD_PROVIDER` | `eks` |
-| `AWS_REGION` | Same region as the client cluster |
-| `EKS_CLUSTER_NAME` | From `terraform output` in `aws-client-setup/` |
-| `BASE_DOMAIN` | `<NLB_IP>.nip.io` (the IP from Step 1) |
-| `AI_PROVIDER` | `openai` or `anthropic` |
-| `AI_API_KEY` | Your API key |
-
-Then run:
-
-```bash
-./onboard-client.sh acme-corp.vars
-```
-
-### Step 4: Access the Dashboard
-
-The script prints URLs at the end. Open the Web UI in a browser:
-
-```
-Web UI:  http://dot-ai-ui-<CLIENT_ID>.<NLB_IP>.nip.io/dashboard
-MCP API: http://dot-ai-<CLIENT_ID>.<NLB_IP>.nip.io
-```
-
-Log in with the Auth Token printed at the end of the onboarding script output.
+- [Onboard Client Script Breakdown](docs/onboard-client-script-breakdown.md) -- Detailed look at the production onboarding logic.
+- [Local Testing Script Breakdown](docs/local-testing-script-breakdown.md) -- How we handle Kind-specific networking and automation.
+- [Helm Chart Modifications](docs/helm-chart-changes.md) -- How kubeconfig injection was wired into the core chart.
 
 ---
 
-## What the Onboarding Script Does
+## Known Pitfalls & Solutions
 
-The `onboard-client.sh` script performs the following steps:
-
-1. **Validates** the vars file and checks prerequisites.
-2. **Fetches** the client cluster kubeconfig using the appropriate cloud CLI.
-3. **Creates a ServiceAccount** (`dot-ai-remote-admin`) on the client cluster with `cluster-admin` permissions and generates a native Kubernetes Bearer Token. This avoids injecting cloud CLI exec-based kubeconfigs, which would fail inside the controller pod.
-4. **Builds a clean kubeconfig** containing only the client API server URL, CA certificate, and the Bearer Token.
-5. **Creates a dedicated namespace** on the Hub for this client and injects the kubeconfig as a Kubernetes Secret.
-6. **Deploys a scoped Helm release** of the `dot-ai-stack` into the client namespace on the Hub.
-7. **Bootstraps the client cluster**: creates the required namespaces (including the Hub namespace for leader election), migrates CRDs, applies the `ResourceSyncConfig`, and mirrors authentication secrets.
-8. **Restarts** the Hub controller to trigger a clean sync cycle.
-
----
-
-## Local Development Guide (Kind)
-
-For rapid local testing without AWS costs:
-
-```bash
-# Step 1: Create the client Kind cluster with demo workloads
-./setup-client.sh
-
-# Step 2: Deploy the Hub Kind cluster with cross-cluster wiring
-./install-dot-ai-remote.sh
-```
-
-Access the dashboard at `http://dot-ai-ui.127.0.0.1.nip.io/dashboard`.
-
----
-
-## Known Pitfalls
-
-### NLB IP Changes After Cluster Recreation
-
-When you destroy and recreate the Hub EKS cluster via Terraform, AWS assigns a new Network Load Balancer with a new IP. You must update `BASE_DOMAIN` in your vars file with the new IP before re-running the onboarding script. Retrieve the new IP with:
-
-```bash
-NLB_HOST=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-dig +short "$NLB_HOST"
-```
-
-### TokenRequest Duration Limit
-
-EKS limits the maximum token duration to 24 hours (86400 seconds). The script requests a 10-year token but EKS silently shortens it. For production environments, implement a token rotation mechanism or use IRSA-based authentication.
+### NLB IP Changes
+When you recreate the Hub cluster, AWS assigns a new NLB IP. You must update `BASE_DOMAIN` in your vars file and re-run the onboarding script.
 
 ### Cross-Cluster Security Groups
-
-If the Hub and Client EKS clusters share the same VPC, the Client's control plane Security Group must allow inbound HTTPS (port 443) from the VPC CIDR block. The `aws-client-setup/` Terraform module includes this rule by default. If you provision client clusters manually, you must add this ingress rule yourself.
+The Hub cluster needs to reach the Client cluster on port 443. The `aws-client-setup/` module handles this for you by allowing the VPC CIDR. If provisioning manually, you must add this ingress rule.
 
 ---
 
 ## Teardown
 
 ```bash
-# 1. Remove the Helm release from the Hub
-helm uninstall dot-ai-acme-corp -n acme-corp --kube-context <HUB_CONTEXT>
-kubectl delete namespace acme-corp --context <HUB_CONTEXT>
+# 1. Remove Client from Hub
+helm uninstall dot-ai-<CLIENT_ID> -n <CLIENT_ID> --kube-context <HUB_CONTEXT>
+kubectl delete namespace <CLIENT_ID> --context <HUB_CONTEXT>
 
-# 2. Destroy the Client cluster
-cd aws-client-setup/
-terraform destroy
-
-# 3. Destroy the Hub cluster
-cd ../eks-cluster/
-terraform destroy
+# 2. Destroy Clusters
+cd aws-client-setup/ && terraform destroy
+cd ../hub-eks-cluster/ && terraform destroy
 ```
-
----
-
-## Additional Documentation
-
-- [Helm Chart Modifications](docs/helm-chart-changes.md) -- How Kubeconfig injection was wired into the chart.
-- [Architecture and Script Breakdown](docs/script-breakdown.md) -- Line-by-line history of the cross-cluster synchronization mechanism.
+ of the cross-cluster synchronization mechanism.

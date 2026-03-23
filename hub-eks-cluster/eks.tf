@@ -1,7 +1,4 @@
-# =============================================================================
 # IAM — EKS Cluster Role
-# =============================================================================
-
 data "aws_iam_policy_document" "eks_cluster_assume_role" {
   statement {
     effect  = "Allow"
@@ -30,11 +27,8 @@ resource "aws_iam_role_policy_attachment" "eks_vpc_resource_controller" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
 }
 
-# =============================================================================
 # Security Group — Cluster (additional / optional extra rules)
 # EKS automatically creates its own managed SG; this one is for custom rules.
-# =============================================================================
-
 resource "aws_security_group" "eks_cluster" {
   name        = "${var.cluster_name}-cluster-sg"
   description = "Additional security group for EKS cluster ${var.cluster_name}"
@@ -54,10 +48,7 @@ resource "aws_security_group" "eks_cluster" {
   }
 }
 
-# =============================================================================
 # EKS Cluster
-# =============================================================================
-
 resource "aws_eks_cluster" "this" {
   name     = var.cluster_name
   version  = var.cluster_version
@@ -83,10 +74,7 @@ resource "aws_eks_cluster" "this" {
   }
 }
 
-# =============================================================================
 # OIDC Provider (needed for IRSA — IAM Roles for Service Accounts)
-# =============================================================================
-
 data "tls_certificate" "eks_oidc" {
   url = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
@@ -101,10 +89,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
   }
 }
 
-# =============================================================================
 # IAM — Managed Node Group Role
-# =============================================================================
-
 data "aws_iam_policy_document" "node_group_assume_role" {
   statement {
     effect  = "Allow"
@@ -170,10 +155,7 @@ resource "aws_iam_role_policy_attachment" "node_ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-# =============================================================================
 # Managed Node Group
-# =============================================================================
-
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = var.node_group_name
@@ -214,11 +196,8 @@ resource "aws_eks_node_group" "this" {
   }
 }
 
-# =============================================================================
 # EKS Add-ons
 # Each add-on resolves to the latest default version for the cluster version.
-# =============================================================================
-
 resource "aws_eks_addon" "coredns" {
   count                       = var.enable_coredns ? 1 : 0
   cluster_name                = aws_eks_cluster.this.name

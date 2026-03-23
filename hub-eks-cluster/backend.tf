@@ -4,9 +4,6 @@
 # By default this module uses LOCAL state (no backend block = local).
 # To enable remote state in S3, uncomment the block below, fill in the
 # bucket / key / region, and run `terraform init -reconfigure`.
-#
-# Tip: create the S3 bucket and DynamoDB lock table with the
-# `aws_s3_bucket` + `aws_dynamodb_table` resources BEFORE enabling this.
 # =============================================================================
 
 # terraform {
