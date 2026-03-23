@@ -166,10 +166,7 @@ resource "aws_iam_role_policy_attachment" "node_ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-# =============================================================================
 # Managed Node Group
-# =============================================================================
-
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = local.resolved_node_group_name
@@ -211,11 +208,7 @@ resource "aws_eks_node_group" "this" {
   }
 }
 
-# =============================================================================
 # EKS Add-ons
-# Each add-on resolves to the latest default version for the cluster version.
-# =============================================================================
-
 resource "aws_eks_addon" "coredns" {
   count                       = var.enable_coredns ? 1 : 0
   cluster_name                = aws_eks_cluster.this.name
