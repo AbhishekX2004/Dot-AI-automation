@@ -106,6 +106,7 @@ HELM_CHART_PATH=./dot-ai-stack
 # Requires more memory but removes the need for an external embeddings API.
 LOCAL_EMBEDDINGS=true
 
+# NOTE: This is not used by the script currently.
 # Namespace on the CLIENT cluster where dot-ai resources will be bootstrapped.
 # Usually "dot-ai" — only change if that namespace is already taken.
-CLIENT_DOT_AI_NAMESPACE=dot-ai
+# CLIENT_DOT_AI_NAMESPACE=dot-ai

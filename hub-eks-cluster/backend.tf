@@ -6,12 +6,12 @@
 # bucket / key / region, and run `terraform init -reconfigure`.
 # =============================================================================
 
-# terraform {
-#   backend "s3" {
-#     bucket         = "my-terraform-state-bucket"  # <-- your S3 bucket name
-#     key            = "dot-ai/eks-cluster/terraform.tfstate"
-#     region         = "us-east-1"                  # <-- must match aws_region
-#     encrypt        = true
-#     use_lockfile = true                           # <-- Enables S3-native locking
-#   }
-# }
+terraform {
+  backend "s3" {
+    bucket         = "multi-tenant-demo-03032026"  # <-- your S3 bucket name
+    key            = "dot-ai/hub-eks-cluster/terraform.tfstate"
+    region         = "us-east-1"                  # <-- must match aws_region
+    encrypt        = true
+    use_lockfile = true                           # <-- Enables S3-native locking
+  }
+}

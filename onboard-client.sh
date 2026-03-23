@@ -86,8 +86,11 @@ esac
 HELM_TIMEOUT="${HELM_TIMEOUT:-600}"
 HELM_CHART_PATH="${HELM_CHART_PATH:-./dot-ai-stack}"
 LOCAL_EMBEDDINGS="${LOCAL_EMBEDDINGS:-true}"
-CLIENT_DOT_AI_NAMESPACE="${CLIENT_DOT_AI_NAMESPACE:-dot-ai}"
 INGRESS_CLASS="${INGRESS_CLASS:-nginx}"
+HELM_FLAGS=""
+if kubectl --context "$HUB_CONTEXT" get crd capabilityscanconfigs.dot-ai.devopstoolkit.live >/dev/null 2>&1; then
+  HELM_FLAGS="--skip-crds"
+fi
 
 # Derived names
 HUB_NAMESPACE="$CLIENT_ID"
@@ -230,16 +233,16 @@ kc_client() {
 
 log "Creating dot-ai-remote-admin ServiceAccount on client cluster..."
 # Ensure the client-side namespace exists first to hold the SA
-kc_client create namespace "$CLIENT_DOT_AI_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+kc_client create namespace "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 
-kc_client create serviceaccount dot-ai-remote-admin -n "$CLIENT_DOT_AI_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+kc_client create serviceaccount dot-ai-remote-admin -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 kc_client create clusterrolebinding dot-ai-remote-admin-binding \
   --clusterrole=cluster-admin \
-  --serviceaccount="${CLIENT_DOT_AI_NAMESPACE}:dot-ai-remote-admin" \
+  --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
 
 # Generate a token (requires Kubernetes 1.24+ TokenRequest API)
-CLIENT_TOKEN=$(kc_client create token dot-ai-remote-admin -n "$CLIENT_DOT_AI_NAMESPACE" --duration=87600h)
+CLIENT_TOKEN=$(kc_client create token dot-ai-remote-admin -n "$HUB_NAMESPACE" --duration=87600h)
 
 # Extract Server URL and CA Data from the original kubeconfig
 CLIENT_SERVER=$(kc_client config view --minify -o jsonpath='{.clusters[0].cluster.server}')
@@ -332,6 +335,7 @@ helm upgrade --install "$HELM_RELEASE" "$HELM_CHART_PATH" \
   --set dot-ai-ui.ingress.enabled=true \
   --set dot-ai-ui.ingress.className="$INGRESS_CLASS" \
   --set dot-ai-ui.ingress.host="$DOT_AI_UI_HOST" \
+  $HELM_FLAGS \
   --wait \
   2>&1 | tee "$HELM_LOG"
 
@@ -340,12 +344,9 @@ success "Helm release '$HELM_RELEASE' deployed."
 # Bootstrap Client Cluster
 section "Bootstrapping Client Cluster"
 
-# Create dot-ai namespace on client cluster (for CRDs and sync configs)
-log "Creating '$CLIENT_DOT_AI_NAMESPACE' namespace on client cluster..."
-
 # The controller runs on the Hub in $HUB_NAMESPACE, and uses that same namespace name
 # for leader election on the Client cluster. So it MUST exist on the Client!
-log "Creating '$HUB_NAMESPACE' namespace on client cluster for controller leader election..."
+log "Ensuring '$HUB_NAMESPACE' namespace exists on client cluster..."
 kc_client create namespace "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 success "Namespace '$HUB_NAMESPACE' ready on client cluster."
 
@@ -387,7 +388,7 @@ apiVersion: dot-ai.devopstoolkit.live/v1alpha1
 kind: ResourceSyncConfig
 metadata:
   name: default-sync
-  namespace: ${CLIENT_DOT_AI_NAMESPACE}
+  namespace: ${HUB_NAMESPACE}
 spec:
   debounceWindowSeconds: 10
   mcpAuthSecretRef:
@@ -418,10 +419,7 @@ kubectl get secret dot-ai-secrets \
   | grep -v '^\s*ownerReferences:' \
   > "$SECRET_TEMP"
 
-# Force the namespace to the client-side dot-ai namespace
-sed -i "s/namespace: ${HUB_NAMESPACE}/namespace: ${CLIENT_DOT_AI_NAMESPACE}/g" "$SECRET_TEMP"
-
-kc_client apply -f "$SECRET_TEMP" --namespace "$CLIENT_DOT_AI_NAMESPACE"
+kc_client apply -f "$SECRET_TEMP" --namespace "$HUB_NAMESPACE"
 success "dot-ai-secrets mirrored to client cluster."
 
 # Restart Hub controller to trigger a clean remote sync
