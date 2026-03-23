@@ -1,7 +1,4 @@
-# =============================================================================
 # Cluster Identity
-# =============================================================================
-
 output "cluster_name" {
   description = "Name of the client EKS cluster."
   value       = aws_eks_cluster.this.name
@@ -17,10 +14,7 @@ output "cluster_version" {
   value       = aws_eks_cluster.this.version
 }
 
-# =============================================================================
 # Connectivity
-# =============================================================================
-
 output "cluster_endpoint" {
   description = "HTTPS endpoint of the Kubernetes API server."
   value       = aws_eks_cluster.this.endpoint
@@ -42,10 +36,7 @@ output "oidc_provider_url" {
   value       = replace(aws_iam_openid_connect_provider.eks.url, "https://", "")
 }
 
-# =============================================================================
 # Networking
-# =============================================================================
-
 output "vpc_id" {
   description = "ID of the VPC the cluster is deployed into."
   value       = data.aws_vpc.default.id
@@ -56,10 +47,7 @@ output "subnet_ids" {
   value       = local.selected_subnet_ids
 }
 
-# =============================================================================
 # Node Group
-# =============================================================================
-
 output "node_group_arn" {
   description = "ARN of the managed node group."
   value       = aws_eks_node_group.this.arn
@@ -75,21 +63,13 @@ output "node_role_arn" {
   value       = aws_iam_role.node_group.arn
 }
 
-# =============================================================================
-# Handy Commands
-# =============================================================================
-
+# add to local kubeconfig command
 output "kubeconfig_command" {
   description = "Run this command to update your local kubeconfig for this client cluster."
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this.name}"
 }
 
-# =============================================================================
-# Onboarding — Values for client.vars
-# =============================================================================
-# Copy these into your client .vars file to onboard this cluster via
-# ./onboard-client.sh <vars-file>
-
+# Values for client.vars
 output "onboard_cloud_provider" {
   description = "Value to use for CLOUD_PROVIDER in client.vars."
   value       = "eks"
@@ -118,5 +98,6 @@ output "onboard_client_vars_snippet" {
     │  EKS_CLUSTER_NAME=${aws_eks_cluster.this.name}
     │                                                                  │
     └──────────────────────────────────────────────────────────────────┘
+    Run ./setup-client-workloads.sh to add dummy workloads.
   EOT
 }

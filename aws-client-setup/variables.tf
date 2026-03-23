@@ -1,7 +1,4 @@
-# =============================================================================
 # General
-# =============================================================================
-
 variable "aws_region" {
   description = "AWS region where the client EKS cluster will be created."
   type        = string
@@ -35,10 +32,7 @@ variable "tags" {
   default     = {}
 }
 
-# =============================================================================
 # Networking — Default VPC
-# =============================================================================
-
 variable "azs_count" {
   description = <<-EOT
     Number of Availability Zones to spread the worker nodes across.
@@ -54,10 +48,7 @@ variable "azs_count" {
   }
 }
 
-# =============================================================================
 # EKS Cluster
-# =============================================================================
-
 variable "cluster_name" {
   description = <<-EOT
     Name for the client EKS cluster. Must be unique within the region.
@@ -85,10 +76,7 @@ variable "cluster_endpoint_private_access" {
   default     = true
 }
 
-# =============================================================================
 # Managed Node Group
-# =============================================================================
-
 variable "node_group_name" {
   description = "Name for the managed node group. If left empty, auto-generated."
   type        = string
@@ -136,10 +124,7 @@ variable "node_capacity_type" {
   }
 }
 
-# =============================================================================
 # EKS Add-ons
-# =============================================================================
-
 variable "enable_coredns" {
   description = "Whether to install the coredns EKS managed add-on."
   type        = bool

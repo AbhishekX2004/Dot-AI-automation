@@ -14,13 +14,14 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.12"
+    }
   }
 }
 
-# ---------------------------------------------------------------------------
 # AWS Provider
-# Region is driven by var.aws_region so all resources land in the same place.
-# ---------------------------------------------------------------------------
 provider "aws" {
   region = var.aws_region
 
@@ -36,17 +37,26 @@ provider "aws" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# Kubernetes Provider
-# Wired to the EKS cluster that Terraform will create in this module.
-# The aws_eks_cluster_auth data source fetches a short-lived token.
-# ---------------------------------------------------------------------------
-data "aws_eks_cluster_auth" "this" {
-  name = aws_eks_cluster.this.name
-}
-
 provider "kubernetes" {
   host                   = aws_eks_cluster.this.endpoint
   cluster_ca_certificate = base64decode(aws_eks_cluster.this.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.this.token
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.this.name, "--region", var.aws_region]
+  }
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = aws_eks_cluster.this.endpoint
+    cluster_ca_certificate = base64decode(aws_eks_cluster.this.certificate_authority[0].data)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.this.name, "--region", var.aws_region]
+    }
+  }
 }

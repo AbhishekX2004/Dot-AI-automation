@@ -26,10 +26,7 @@ warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 section() { echo ""; echo -e "${CYAN}══════════════════════════════════════════${NC}"; echo -e "${CYAN}  $*${NC}"; echo -e "${CYAN}══════════════════════════════════════════${NC}"; }
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Parse Arguments
-# ─────────────────────────────────────────────────────────────────────────────
-
 CLUSTER_NAME=""
 AWS_REGION=""
 
@@ -57,10 +54,7 @@ fi
 log "Cluster : $CLUSTER_NAME"
 log "Region  : $AWS_REGION"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Update kubeconfig
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Update kubeconfig
 section "Updating kubeconfig for $CLUSTER_NAME"
 
 aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
@@ -70,10 +64,7 @@ success "kubeconfig updated."
 CLIENT_CONTEXT=$(kubectl config current-context)
 log "Using context: $CLIENT_CONTEXT"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Create Namespaces
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Create Namespaces
 section "Creating Demo Namespaces"
 
 for NS in client-frontend client-backend chaos-testing; do
@@ -81,13 +72,10 @@ for NS in client-frontend client-backend chaos-testing; do
   success "Namespace '$NS' ready."
 done
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Deploy Workloads
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Deploy Workloads
 section "Deploying Demo Workloads"
 
-# --- client-frontend: nginx web app ---
+# client-frontend: nginx web app
 log "Deploying NGINX to client-frontend..."
 kubectl create deployment client-web-app \
   --image=nginx:alpine \
@@ -101,7 +89,7 @@ kubectl expose deployment client-web-app \
   --dry-run=client -o yaml | kubectl apply -f -
 success "client-web-app deployed in client-frontend."
 
-# --- client-backend: redis cache ---
+# client-backend: redis cache
 log "Deploying Redis to client-backend..."
 kubectl create deployment client-redis-cache \
   --image=redis:alpine \
@@ -109,7 +97,7 @@ kubectl create deployment client-redis-cache \
   --dry-run=client -o yaml | kubectl apply -f -
 success "client-redis-cache deployed in client-backend."
 
-# --- chaos-testing: a deliberately broken deployment ---
+# chaos-testing: a deliberately broken deployment
 log "Deploying a broken app to chaos-testing (for Dot-AI to diagnose)..."
 kubectl create deployment failing-api \
   --image=node:super-broken-tag-999 \
@@ -117,10 +105,7 @@ kubectl create deployment failing-api \
   --dry-run=client -o yaml | kubectl apply -f -
 success "failing-api deployed in chaos-testing (will be in ImagePullBackOff — intentional)."
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Wait for Healthy Deployments
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Wait for Healthy Deployments
 section "Waiting for Healthy Deployments"
 
 log "Waiting for client-web-app..."
@@ -135,10 +120,7 @@ kubectl wait --for=condition=available deployment/client-redis-cache \
 
 log "Skipping wait for failing-api (intentionally broken)."
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Summary
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Summary
 section "Client Cluster Ready!"
 
 echo ""

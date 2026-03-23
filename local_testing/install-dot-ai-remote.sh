@@ -133,7 +133,7 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 HELM_LOG="dot-ai-helm-${TIMESTAMP}.log"
 echo "Installing custom dot-ai-stack via Helm... (Logging output to $HELM_LOG)"
 
-helm upgrade --install dot-ai-stack ./dot-ai-stack \
+helm upgrade --install dot-ai-stack ../dot-ai-stack \
   --namespace dot-ai \
   --set dot-ai.remoteCluster.secretName="client-cluster-kubeconfig" \
   --set dot-ai-controller.remoteCluster.secretName="client-cluster-kubeconfig" \

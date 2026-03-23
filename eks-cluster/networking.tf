@@ -1,9 +1,6 @@
-# =============================================================================
 # Default VPC & Subnets
-#
 # Using the AWS default VPC avoids NAT Gateway / custom VPC costs.
 # The default VPC exists in every region and has a default subnet per AZ.
-# =============================================================================
 
 # Look up the default VPC in the chosen region.
 data "aws_vpc" "default" {
@@ -38,10 +35,8 @@ locals {
   )
 }
 
-# ---------------------------------------------------------------------------
 # EKS requires specific tags on the subnets it uses.
 # We tag the *default* subnets in-place rather than creating new ones.
-# ---------------------------------------------------------------------------
 resource "aws_ec2_tag" "eks_subnet_cluster_tag" {
   for_each    = toset(local.selected_subnet_ids)
   resource_id = each.value

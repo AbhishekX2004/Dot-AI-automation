@@ -1,6 +1,6 @@
-# AWS Client Setup — Standalone Terraform Module
+# AWS Client Setup -- Terraform Module
 
-Provisions an **Amazon EKS cluster** as a **client** to be onboarded to the Dot-AI Hub via `onboard-client.sh`. Uses the **AWS default VPC** (no custom networking costs). Designed to be fully isolated and self-contained.
+Provisions an **Amazon EKS cluster** intended to be onboarded as a **client** to the Dot-AI Hub via the `onboard-client.sh` script. Uses the **AWS default VPC** to avoid custom networking costs. Designed to be fully isolated and self-contained.
 
 > **Purpose:** This directory creates the client-side infrastructure. The Hub cluster is created separately in `eks-cluster/`.
 
@@ -11,17 +11,18 @@ Provisions an **Amazon EKS cluster** as a **client** to be onboarded to the Dot-
 | Resource | Details |
 |---|---|
 | **EKS Cluster** | Named `dot-ai-client-<client_name>`, public + private API endpoint |
-| **Managed Node Group** | `t3.small` × 2 (min 1, max 4) |
+| **Managed Node Group** | `t3.small` x 2 (min 1, max 4) |
 | **IAM Roles** | Cluster role + Node role with required AWS policies |
 | **OIDC Provider** | Enables IRSA (IAM Roles for Service Accounts) |
 | **EKS Add-ons** | CoreDNS, kube-proxy, VPC CNI, EBS CSI driver |
+| **Security Group** | Includes intra-VPC ingress on port 443 for Hub Controller access |
 | **Networking** | Uses default VPC + default subnets (no NAT Gateway) |
 
 ---
 
 ## Prerequisites
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) ≥ 1.6.0
+- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.6.0
 - [AWS CLI](https://aws.amazon.com/cli/) configured (`aws configure`)
 - IAM permissions to create EKS, EC2, IAM, and VPC resources
 
@@ -35,7 +36,7 @@ cd aws-client-setup/
 
 # 2. Copy and customise variables
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — at minimum set client_name
+# Edit terraform.tfvars -- at minimum set client_name
 
 # 3. Initialise providers
 terraform init
@@ -59,20 +60,34 @@ terraform output
 ## End-to-End Onboarding Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  1. terraform apply          (this directory)                   │
-│     → Provisions client EKS cluster on AWS                      │
-│                                                                 │
-│  2. terraform output                                            │
-│     → Shows CLOUD_PROVIDER, AWS_REGION, EKS_CLUSTER_NAME        │
-│                                                                 │
-│  3. cp ../client.vars acme-corp.vars                            │
-│     → Fill in the output values + Hub details                   │
-│                                                                 │
-│  4. cd .. && ./onboard-client.sh acme-corp.vars                 │
-│     → Connects client cluster to the Hub                        │
-└─────────────────────────────────────────────────────────────────┘
+1. terraform apply              (this directory)
+   -- Provisions client EKS cluster on AWS
+
+2. terraform output
+   -- Shows CLOUD_PROVIDER, AWS_REGION, EKS_CLUSTER_NAME
+
+3. cp ../client.vars.example acme-corp.vars
+   -- Fill in the output values + Hub details
+
+4. cd .. && ./onboard-client.sh acme-corp.vars
+   -- Connects client cluster to the Hub
 ```
+
+---
+
+## Cross-Cluster Networking
+
+When the Hub and Client clusters share the same AWS VPC (which they do by default since both use the default VPC), the Hub Controller resolves the Client API server to private IP addresses. To allow this traffic, the Security Group for this module includes an ingress rule that permits HTTPS (port 443) from the VPC CIDR block.
+
+If you provision client clusters outside of this Terraform module, you must manually add an equivalent ingress rule to the cluster's Security Group:
+
+```
+Type: HTTPS
+Port: 443
+Source: <VPC CIDR block, e.g. 172.31.0.0/16>
+```
+
+Without this rule, the Hub Controller will time out when attempting to connect to the Client API server.
 
 ---
 
@@ -125,14 +140,14 @@ terraform init -reconfigure
 
 ## Cost Estimate (us-east-1, default config)
 
-| Resource | ~Monthly Cost |
+| Resource | Approximate Monthly Cost |
 |---|---|
 | EKS Control Plane | $73 |
-| 2× `t3.small` (on-demand) | ~$30 |
-| EBS (2× 20 GiB gp2) | ~$4 |
+| 2x `t3.small` (on-demand) | ~$30 |
+| EBS (2x 20 GiB gp2) | ~$4 |
 | **Total** | **~$107/month** |
 
-> **Tip:** Switch to `node_capacity_type = "SPOT"` to cut node costs by ~70%.
+> Switch to `node_capacity_type = "SPOT"` to cut node costs by approximately 70%.
 
 ---
 
@@ -141,6 +156,10 @@ terraform init -reconfigure
 ```bash
 # Remove demo workloads first (if created)
 kubectl delete namespace client-frontend client-backend chaos-testing --ignore-not-found
+
+# Remove the Dot-AI onboarding resources from the client cluster
+kubectl delete namespace dot-ai <CLIENT_ID> --ignore-not-found
+kubectl delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
 
 # Destroy all Terraform-managed resources
 terraform destroy

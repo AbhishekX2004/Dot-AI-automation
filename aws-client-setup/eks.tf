@@ -1,7 +1,4 @@
-# =============================================================================
 # IAM — EKS Cluster Role
-# =============================================================================
-
 data "aws_iam_policy_document" "eks_cluster_assume_role" {
   statement {
     effect  = "Allow"
@@ -24,16 +21,14 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# Required for EKS to manage ENIs on your behalf.
+# Required for EKS to manage ENIs on our behalf.
 resource "aws_iam_role_policy_attachment" "eks_vpc_resource_controller" {
   role       = aws_iam_role.eks_cluster.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
 }
 
-# =============================================================================
 # Security Group — Cluster (additional / optional extra rules)
 # EKS automatically creates its own managed SG; this one is for custom rules.
-# =============================================================================
 
 resource "aws_security_group" "eks_cluster" {
   name        = "${local.resolved_cluster_name}-cluster-sg"
@@ -49,15 +44,21 @@ resource "aws_security_group" "eks_cluster" {
     description = "Allow all outbound"
   }
 
+  # Allow intra-VPC access to the API server so the Hub Controller can reach it.
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    description = "Allow intra-VPC API access for Hub Controller"
+  }
+
   tags = {
     Name = "${local.resolved_cluster_name}-cluster-sg"
   }
 }
 
-# =============================================================================
 # EKS Cluster
-# =============================================================================
-
 resource "aws_eks_cluster" "this" {
   name     = local.resolved_cluster_name
   version  = var.cluster_version
@@ -84,10 +85,7 @@ resource "aws_eks_cluster" "this" {
   }
 }
 
-# =============================================================================
 # OIDC Provider (needed for IRSA — IAM Roles for Service Accounts)
-# =============================================================================
-
 data "tls_certificate" "eks_oidc" {
   url = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
@@ -102,10 +100,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
   }
 }
 
-# =============================================================================
 # IAM — Managed Node Group Role
-# =============================================================================
-
 data "aws_iam_policy_document" "node_group_assume_role" {
   statement {
     effect  = "Allow"
@@ -138,7 +133,7 @@ resource "aws_iam_role_policy_attachment" "node_ecr_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# EBS CSI driver needs this to manage volumes (now explicitly using IRSA instead of node role directly).
+# needed by EBS CSI driver to manage volumes (now explicitly using IRSA instead of node role directly).
 data "aws_iam_policy_document" "ebs_csi_driver_assume_role" {
   count = var.enable_ebs_csi_driver ? 1 : 0
 

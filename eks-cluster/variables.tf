@@ -1,7 +1,4 @@
-# =============================================================================
 # General
-# =============================================================================
-
 variable "aws_region" {
   description = "AWS region where the EKS cluster will be created."
   type        = string
@@ -20,10 +17,7 @@ variable "tags" {
   default     = {}
 }
 
-# =============================================================================
 # Networking — Default VPC
-# =============================================================================
-
 variable "azs_count" {
   description = <<-EOT
     Number of Availability Zones to spread the worker nodes across.
@@ -39,10 +33,7 @@ variable "azs_count" {
   }
 }
 
-# =============================================================================
 # EKS Cluster
-# =============================================================================
-
 variable "cluster_name" {
   description = "Name for the EKS cluster. Must be unique within the region."
   type        = string
@@ -67,10 +58,7 @@ variable "cluster_endpoint_private_access" {
   default     = true
 }
 
-# =============================================================================
 # Managed Node Group
-# =============================================================================
-
 variable "node_group_name" {
   description = "Name for the managed node group."
   type        = string
@@ -118,10 +106,7 @@ variable "node_capacity_type" {
   }
 }
 
-# =============================================================================
 # EKS Add-ons
-# =============================================================================
-
 variable "enable_coredns" {
   description = "Whether to install the coredns EKS managed add-on."
   type        = bool
@@ -142,6 +127,12 @@ variable "enable_vpc_cni" {
 
 variable "enable_ebs_csi_driver" {
   description = "Whether to install the aws-ebs-csi-driver EKS managed add-on (needed for PVCs backed by EBS)."
+  type        = bool
+  default     = true
+}
+
+variable "enable_nginx_ingress" {
+  description = "Whether to deploy the ingress-nginx controller to the EKS cluster."
   type        = bool
   default     = true
 }
