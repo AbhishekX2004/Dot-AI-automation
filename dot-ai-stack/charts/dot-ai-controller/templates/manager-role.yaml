@@ -4,7 +4,7 @@ kind: ClusterRole
 metadata:
   labels:
     {{- include "dot-ai-controller.labels" . | nindent 4 }}
-  name: {{ include "dot-ai-controller.clusterRoleName" . }}
+  name: {{ .Release.Name }}-manager-role
 rules:
 - apiGroups:
   - ""

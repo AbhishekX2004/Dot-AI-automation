@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "dot-ai.fullname" . }}
+  name: {{ .Release.Name }}-{{ include "dot-ai.fullname" . }}
   labels:
     {{- include "dot-ai.labels" . | nindent 4 }}
   {{- $annotations := include "dot-ai.annotations" (dict "global" .Values.annotations "local" nil) -}}

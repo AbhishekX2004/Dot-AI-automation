@@ -15,7 +15,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "dot-ai-controller.clusterRoleBindingName" . }}
+  name: {{ .Release.Name }}-manager-rolebinding
   labels:
     {{- include "dot-ai-controller.labels" . | nindent 4 }}
   {{- $annotations := include "dot-ai-controller.annotations" (dict "global" .Values.annotations "local" nil) -}}
@@ -26,7 +26,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "dot-ai-controller.clusterRoleName" . }}
+  name: {{ .Release.Name }}-manager-role
 subjects:
 - kind: ServiceAccount
   name: {{ include "dot-ai-controller.serviceAccountName" . }}
