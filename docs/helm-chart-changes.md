@@ -41,4 +41,21 @@ env:
     value: "/external-cluster/config"
   {{- end }}
 ```
+
 *Result: The controller physically runs on the Hub, but its "brain" is permanently wired to the remote Client API.*
+
+## 3. CRD Relocation
+Custom Resource Definitions (CRDs) were moved out of the individual chart `templates/` directories into a centralized `crds/` folder at the root of the `dot-ai-stack`. This allows Helm to correctly install and upgrade CRDs before evaluating the templates that rely on them.
+Moving the CRD files to the root of the `dot-ai-stack` directory ensures that Helm dosen't give ownership to any specific client
+
+## 4. Dynamic Resource Naming
+To support multiple installations and prevent naming collisions, hardcoded resource names in the metadata were updated to be dynamic. This change was applied across both main sub-charts:
+- `charts/dot-ai/templates/*`
+- `charts/dot-ai-controller/templates/*`
+
+Names are now generated using Helm helper functions, such as:
+```yaml
+metadata:
+  name: {{ .Release.Name }}-{{ include "dot-ai.fullname" . }}
+```
+This ensures resources are uniquely scoped per release, allowing for safer deployments and easier management.
