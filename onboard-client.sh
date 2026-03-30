@@ -70,6 +70,23 @@ if ! echo "$CLIENT_ID" | grep -qE '^[a-z0-9][a-z0-9-]*[a-z0-9]$'; then
   error "CLIENT_ID '$CLIENT_ID' is invalid. Use only lowercase letters, numbers, and hyphens (e.g. acme-corp)."
 fi
 
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_DIR="onboard-logs-${CLIENT_ID}-${TIMESTAMP}"
+mkdir -p "$LOG_DIR"
+LOG_FILE="${LOG_DIR}/onboard.log"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
+log "Logging output to $LOG_FILE"
+
+save_and_clean_tmp() {
+  for f in "$@"; do
+    if [[ -f "$f" ]]; then
+      cp "$f" "$LOG_DIR/" 2>/dev/null || true
+      rm -f "$f"
+    fi
+  done
+}
+
 # Validate CLOUD_PROVIDER
 case "$CLOUD_PROVIDER" in
   eks|gke|acp|file) ;;
@@ -98,8 +115,7 @@ HELM_RELEASE="dot-ai-${CLIENT_ID}"
 SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
 TMP_KUBECONFIG=$(mktemp /tmp/dot-ai-client-kubeconfig-XXXXXX)
 # Ensure temp file is cleaned up on exit
-trap 'rm -f "$TMP_KUBECONFIG"' EXIT
-
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG"' EXIT
 success "Configuration valid. Client ID: $CLIENT_ID | Provider: $CLOUD_PROVIDER"
 
 # Check Prerequisites
@@ -250,7 +266,7 @@ CLIENT_CA=$(kc_client config view --minify --raw -o jsonpath='{.clusters[0].clus
 
 # Build a clean kubeconfig for the Hub controller
 HUB_SECRET_KUBECONFIG=$(mktemp /tmp/dot-ai-hub-kubeconfig-XXXXXX)
-trap 'rm -f "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG"' EXIT
 
 if [[ -n "$CLIENT_CA" ]]; then
   CA_CONFIG="certificate-authority-data: ${CLIENT_CA}"
@@ -308,8 +324,7 @@ esac
 # Helm Deployment
 section "Deploying dot-ai Helm Release: $HELM_RELEASE"
 
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-HELM_LOG="dot-ai-helm-${CLIENT_ID}-${TIMESTAMP}.log"
+HELM_LOG="${LOG_DIR}/dot-ai-helm-${CLIENT_ID}-${TIMESTAMP}.log"
 
 DOT_AI_API_HOST="dot-ai-${CLIENT_ID}.${BASE_DOMAIN}"
 DOT_AI_UI_HOST="dot-ai-ui-${CLIENT_ID}.${BASE_DOMAIN}"
@@ -353,7 +368,7 @@ success "Namespace '$HUB_NAMESPACE' ready on client cluster."
 # Migrate CRDs from Hub to Client
 log "Migrating Dot-AI CRDs from Hub to client cluster..."
 CRDS_TEMP=$(mktemp /tmp/dot-ai-crds-XXXXXX.yaml)
-trap 'rm -f "$TMP_KUBECONFIG" "$CRDS_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CRDS_TEMP"' EXIT
 
 kubectl get crds \
   --context "$HUB_CONTEXT" \
@@ -378,7 +393,7 @@ fi
 # Apply ResourceSyncConfig on client cluster
 log "Applying ResourceSyncConfig on client cluster..."
 SYNC_TEMP=$(mktemp /tmp/dot-ai-sync-XXXXXX.yaml)
-trap 'rm -f "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP"' EXIT
 
 # The Hub controller reads this CRD remotely, and performs the sync itself.
 # Using the internal Hub service URL ensures it works regardless of NAT hairpinning
@@ -406,7 +421,7 @@ success "ResourceSyncConfig applied on client cluster."
 # Mirror dot-ai-secrets from Hub to Client
 log "Mirroring dot-ai-secrets from Hub to client cluster..."
 SECRET_TEMP=$(mktemp /tmp/dot-ai-secret-XXXXXX.yaml)
-trap 'rm -f "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
 
 kubectl get secret dot-ai-secrets \
   --context "$HUB_CONTEXT" \
