@@ -1,0 +1,81 @@
+# =============================================================================
+# hub-setup/metallb-config.yaml — MetalLB L2 Configuration Reference
+# =============================================================================
+# PURPOSE: This file is a STANDALONE REFERENCE for the MetalLB configuration.
+#          It uses the DEFAULT IP range (172.18.255.200-172.18.255.250).
+#
+# The actual Terraform apply inlines this YAML with var.metallb_ip_range
+# substituted dynamically (see null_resource.metallb_config in main.tf).
+#
+# You can also apply this file DIRECTLY (standalone) with:
+#   kubectl --context kind-hub-cluster apply -f metallb-config.yaml
+#
+# ============================================================
+# HOW TO DETECT YOUR DOCKER KIND SUBNET DYNAMICALLY:
+# ============================================================
+# Run this command AFTER the Hub cluster is created:
+#
+#   SUBNET=$(docker network inspect \
+#     -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' kind)
+#   echo "Kind Docker subnet: $SUBNET"
+#
+# Then derive a safe IP range from the last octet class, e.g.:
+#   Subnet 172.18.0.0/16  →  range: 172.18.255.200-172.18.255.250
+#   Subnet 172.19.0.0/16  →  range: 172.19.255.200-172.19.255.250
+#   Subnet 192.168.0.0/16 →  range: 192.168.255.200-192.168.255.250
+#
+# Update var.metallb_ip_range in terraform.tfvars to match your subnet.
+# ============================================================
+#
+# HOW MetalLB L2 MODE WORKS (vs AWS NLB):
+#   AWS NLB: AWS provisions a real load balancer with a public/internal IP.
+#   MetalLB L2: MetalLB makes one node "own" the Service IP using ARP (Address
+#   Resolution Protocol) on the Docker bridge network. Any pod on the kind
+#   network can reach the external IP, simulating NLB behaviour locally.
+#
+# RESOURCES EXPLAINED:
+#   IPAddressPool: Declares a range of IPs MetalLB is allowed to hand out.
+#   L2Advertisement: Tells MetalLB to advertise the pool via ARP on the
+#   local (Docker bridge) network interface.
+# =============================================================================
+
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: kind-pool
+  namespace: metallb-system
+  labels:
+    app: metallb
+    environment: local-dev
+spec:
+  # IP range to allocate to LoadBalancer services.
+  # Choose a slice that won't collide with existing container IPs.
+  # The .255.x range is conventionally safe since Docker assigns node IPs
+  # starting from the low end of the subnet (e.g. 172.18.0.2, 172.18.0.3...).
+  addresses:
+    - 172.18.255.200-172.18.255.250
+
+  # avoidBuggyIPs: skip .0 and .255 broadcast addresses (good practice).
+  avoidBuggyIPs: true
+
+---
+
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: kind-l2advert
+  namespace: metallb-system
+  labels:
+    app: metallb
+    environment: local-dev
+spec:
+  # Reference the pool defined above. When multiple pools exist, L2Advertisement
+  # must explicitly bind to each pool you want advertised.
+  ipAddressPools:
+    - kind-pool
+
+  # interfaces: [] means MetalLB will advertise on ALL network interfaces.
+  # In a kind setup with Docker bridge networking, this is the desired behaviour.
+  # Uncomment and restrict if you have multiple interfaces and need to limit ARP:
+  # interfaces:
+  #   - eth0

@@ -1,0 +1,12 @@
+apiVersion: dot-ai.devopstoolkit.live/v1alpha1
+kind: ResourceSyncConfig
+metadata:
+  name: default-sync
+  namespace: client-b
+spec:
+  debounceWindowSeconds: 10
+  mcpAuthSecretRef:
+    key: auth-token
+    name: dot-ai-secrets
+  mcpEndpoint: http://dot-ai.client-b.svc.cluster.local:3456/api/v1/resources/sync
+  resyncIntervalMinutes: 60
