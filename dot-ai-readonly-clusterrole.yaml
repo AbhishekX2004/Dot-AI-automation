@@ -1,14 +1,13 @@
 #
-#  V4  (fixes: status write-back + missing API groups discovered at runtime)
+#  V5
 #
+
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: dot-ai-readonly
 rules:
-  # 1. Core API Group — read-only on safe resources
-  #    Deliberately excludes secrets at cluster scope (use the namespaced Role
-  #    dot-ai-secret-reader for the single dot-ai-secrets Secret).
+  # 1) Core API group: explicit safe read‑only, no secrets
   - apiGroups: [""]
     resources:
       - pods
@@ -17,6 +16,7 @@ rules:
       - podtemplates
       - services
       - endpoints
+      - endpointslices
       - namespaces
       - nodes
       - persistentvolumes
@@ -30,7 +30,7 @@ rules:
       - componentstatuses
     verbs: ["get", "list", "watch"]
 
-  # 2. Main app API groups: safe wildcard read
+  # 2) Main app / K8s API groups: read everything
   - apiGroups:
       - "apps"
       - "autoscaling"
@@ -43,43 +43,118 @@ rules:
       - "apiregistration.k8s.io"
       - "admissionregistration.k8s.io"
       - "metrics.k8s.io"
+      - "scheduling.k8s.io"
+      - "flowcontrol.apiserver.k8s.io"
+      - "node.k8s.io"
+      - "resource.k8s.io"
+      - "certificates.k8s.io"
+      - "discovery.k8s.io"
+      - "events.k8s.io"
     resources: ["*"]
     verbs: ["get", "list", "watch"]
 
-  # 3. dot-ai CRDs — read + status write-back
-  #    CRITICAL: the controller must be able to update resourcesyncconfigs/status
-  #    on the remote client cluster. Without this, every reconcile loop fails with
-  #    a 403 and the controller enters exponential backoff, freezing all syncs.
+  # 3) CRDs and CRs across all groups: read, no write
+  # - apiGroups: ["*"]
+  #   resources:
+  #     - customresourcedefinitions
+  #     - "*"
+  #   verbs: ["get", "list", "watch"]
+
+  # 4) dot‑ai CRDs on client: read only, no status write‑back
   - apiGroups: ["dot-ai.devopstoolkit.live"]
     resources: ["*"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["dot-ai.devopstoolkit.live"]
-    resources: ["resourcesyncconfigs/status"]
-    verbs: ["get", "update", "patch"]
 
-  # 4. Additional API groups discovered by controller at runtime (dynamic informers)
-  #    Without these, the informer reflector logs constant RBAC errors and the
-  #    watch pipeline degrades, causing missed resource change events.
-  - apiGroups: ["scheduling.k8s.io"]
-    resources: ["priorityclasses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["flowcontrol.apiserver.k8s.io"]
-    resources: ["flowschemas", "prioritylevelconfigurations"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["node.k8s.io"]
-    resources: ["runtimeclasses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["resource.k8s.io"]
-    resources: ["resourceclaims", "resourceclaimtemplates", "resourceslices", "deviceclasses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["certificates.k8s.io"]
-    resources: ["certificatesigningrequests"]
-    verbs: ["get", "list", "watch"]
-
-  # 5. Leader Election: Write Access for Leases Only
+  # 5) LEADER ELECTION ONLY IF YOU ACTUALLY RUN LEADER ELECTION ON CLIENT
+  #    If you *do not* run leader‑elected controller on the client, omit this.
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+
+
+#
+#  V4  (fixes: status write-back + missing API groups discovered at runtime)
+#
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRole
+# metadata:
+#   name: dot-ai-readonly
+# rules:
+#   # 1. Core API Group — read-only on safe resources
+#   #    Deliberately excludes secrets at cluster scope (use the namespaced Role
+#   #    dot-ai-secret-reader for the single dot-ai-secrets Secret).
+#   - apiGroups: [""]
+#     resources:
+#       - pods
+#       - pods/log
+#       - pods/status
+#       - podtemplates
+#       - services
+#       - endpoints
+#       - namespaces
+#       - nodes
+#       - persistentvolumes
+#       - persistentvolumeclaims
+#       - configmaps
+#       - serviceaccounts
+#       - events
+#       - resourcequotas
+#       - limitranges
+#       - replicationcontrollers
+#       - componentstatuses
+#     verbs: ["get", "list", "watch"]
+
+#   # 2. Main app API groups: safe wildcard read
+#   - apiGroups:
+#       - "apps"
+#       - "autoscaling"
+#       - "batch"
+#       - "networking.k8s.io"
+#       - "storage.k8s.io"
+#       - "rbac.authorization.k8s.io"
+#       - "apiextensions.k8s.io"
+#       - "policy"
+#       - "apiregistration.k8s.io"
+#       - "admissionregistration.k8s.io"
+#       - "metrics.k8s.io"
+#     resources: ["*"]
+#     verbs: ["get", "list", "watch"]
+
+#   # 3. dot-ai CRDs — read + status write-back
+#   #    CRITICAL: the controller must be able to update resourcesyncconfigs/status
+#   #    on the remote client cluster. Without this, every reconcile loop fails with
+#   #    a 403 and the controller enters exponential backoff, freezing all syncs.
+#   - apiGroups: ["dot-ai.devopstoolkit.live"]
+#     resources: ["*"]
+#     verbs: ["get", "list", "watch"]
+#   - apiGroups: ["dot-ai.devopstoolkit.live"]
+#     resources: ["resourcesyncconfigs/status"]
+#     verbs: ["get", "update", "patch"]
+
+#   # 4. Additional API groups discovered by controller at runtime (dynamic informers)
+#   #    Without these, the informer reflector logs constant RBAC errors and the
+#   #    watch pipeline degrades, causing missed resource change events.
+#   - apiGroups: ["scheduling.k8s.io"]
+#     resources: ["priorityclasses"]
+#     verbs: ["get", "list", "watch"]
+#   - apiGroups: ["flowcontrol.apiserver.k8s.io"]
+#     resources: ["flowschemas", "prioritylevelconfigurations"]
+#     verbs: ["get", "list", "watch"]
+#   - apiGroups: ["node.k8s.io"]
+#     resources: ["runtimeclasses"]
+#     verbs: ["get", "list", "watch"]
+#   - apiGroups: ["resource.k8s.io"]
+#     resources: ["resourceclaims", "resourceclaimtemplates", "resourceslices", "deviceclasses"]
+#     verbs: ["get", "list", "watch"]
+#   - apiGroups: ["certificates.k8s.io"]
+#     resources: ["certificatesigningrequests"]
+#     verbs: ["get", "list", "watch"]
+
+#   # 5. Leader Election: Write Access for Leases Only
+#   - apiGroups: ["coordination.k8s.io"]
+#     resources: ["leases"]
+#     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
 
 #  

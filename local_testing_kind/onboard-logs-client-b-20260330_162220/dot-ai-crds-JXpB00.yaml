@@ -1,0 +1,1469 @@
+apiVersion: v1
+items:
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.18.0
+    name: capabilityscanconfigs.dot-ai.devopstoolkit.live
+  spec:
+    conversion:
+      strategy: None
+    group: dot-ai.devopstoolkit.live
+    names:
+      kind: CapabilityScanConfig
+      listKind: CapabilityScanConfigList
+      plural: capabilityscanconfigs
+      singular: capabilityscanconfig
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Ready status
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - description: Initial scan completed
+        jsonPath: .status.initialScanComplete
+        name: Initial Scan
+        type: boolean
+      - description: Last scan time
+        jsonPath: .status.lastScanTime
+        name: Last Scan
+        type: date
+      - jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            CapabilityScanConfig is the Schema for the capabilityscanconfigs API
+            It configures the controller to watch CRDs and trigger capability scans via MCP
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: spec defines the desired state of CapabilityScanConfig
+              properties:
+                debounceWindowSeconds:
+                  default: 10
+                  description: |-
+                    DebounceWindowSeconds is the time window to collect CRD events before sending to MCP
+                    When a CRD event is received, the controller waits for this duration to collect
+                    more events, then sends them all in a single batched request.
+                    This reduces HTTP requests when operators are installed (many CRDs at once).
+                  maximum: 300
+                  minimum: 1
+                  type: integer
+                excludeResources:
+                  description: |-
+                    ExcludeResources specifies patterns for resources to exclude from scanning
+                    Applied after includeResources filtering
+                    Patterns support wildcards: "*.internal.example.com", "events.*"
+                  items:
+                    type: string
+                  type: array
+                includeResources:
+                  description: |-
+                    IncludeResources specifies patterns for resources to include in scanning
+                    Patterns support wildcards: "*.crossplane.io", "deployments.apps", "Service"
+                    Format: "Kind.group" for grouped resources, "Kind" for core resources
+                    If empty, all resources are included (subject to excludeResources)
+                  items:
+                    type: string
+                  type: array
+                mcp:
+                  description: MCP configuration for capability scanning
+                  properties:
+                    authSecretRef:
+                      description: |-
+                        AuthSecretRef references a Kubernetes Secret containing the MCP authentication token
+                        The Secret must exist in the same namespace as the CapabilityScanConfig
+                      properties:
+                        key:
+                          description: Key within the secret containing the value
+                          type: string
+                        name:
+                          description: Name of the secret in the same namespace as
+                            the resource
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    collection:
+                      default: capabilities
+                      description: Collection is the Qdrant collection name for storing
+                        capabilities
+                      type: string
+                    endpoint:
+                      description: Endpoint is the MCP server URL
+                      type: string
+                  required:
+                  - authSecretRef
+                  - endpoint
+                  type: object
+                retry:
+                  description: Retry configuration for MCP API calls
+                  properties:
+                    backoffSeconds:
+                      default: 5
+                      description: |-
+                        BackoffSeconds is the initial backoff duration in seconds
+                        Subsequent retries use exponential backoff (backoff * 2^attempt)
+                      maximum: 300
+                      minimum: 1
+                      type: integer
+                    maxAttempts:
+                      default: 3
+                      description: MaxAttempts is the maximum number of retry attempts
+                        (including initial attempt)
+                      maximum: 10
+                      minimum: 1
+                      type: integer
+                    maxBackoffSeconds:
+                      default: 300
+                      description: MaxBackoffSeconds is the maximum backoff duration
+                        in seconds
+                      maximum: 3600
+                      minimum: 1
+                      type: integer
+                  type: object
+              required:
+              - mcp
+              type: object
+            status:
+              description: status defines the observed state of CapabilityScanConfig
+              properties:
+                conditions:
+                  description: Current conditions of the config
+                  items:
+                    description: Condition contains details for one aspect of the
+                      current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False,
+                          Unknown.
+                        enum:
+                        - "True"
+                        - "False"
+                        - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - message
+                    - reason
+                    - status
+                    - type
+                    type: object
+                  type: array
+                initialScanComplete:
+                  description: Whether the initial scan has been completed
+                  type: boolean
+                lastError:
+                  description: Last error message if any
+                  type: string
+                lastScanTime:
+                  description: Timestamp of last successful scan trigger
+                  format: date-time
+                  type: string
+              type: object
+          required:
+          - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: CapabilityScanConfig
+      listKind: CapabilityScanConfigList
+      plural: capabilityscanconfigs
+      singular: capabilityscanconfig
+    conditions:
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: no conflicts found
+      reason: NoConflicts
+      status: "True"
+      type: NamesAccepted
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: the initial names have been accepted
+      reason: InitialNamesAccepted
+      status: "True"
+      type: Established
+    storedVersions:
+    - v1alpha1
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.18.0
+    name: gitknowledgesources.dot-ai.devopstoolkit.live
+  spec:
+    conversion:
+      strategy: None
+    group: dot-ai.devopstoolkit.live
+    names:
+      kind: GitKnowledgeSource
+      listKind: GitKnowledgeSourceList
+      plural: gitknowledgesources
+      shortNames:
+      - gks
+      singular: gitknowledgesource
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Current sync phase
+        jsonPath: .status.phase
+        name: Phase
+        type: string
+      - description: Whether sync is active
+        jsonPath: .status.active
+        name: Active
+        type: boolean
+      - description: Number of synced documents
+        jsonPath: .status.documentCount
+        name: Documents
+        type: integer
+      - description: Time of last sync
+        jsonPath: .status.lastSyncTime
+        name: Last Sync
+        type: date
+      - description: Sync error count
+        jsonPath: .status.syncErrors
+        name: Errors
+        type: integer
+      - description: Time since creation
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            GitKnowledgeSource is the Schema for the gitknowledgesources API
+            It defines a Git repository to sync documents from into the MCP knowledge base
+            Works with any Git provider: GitHub, GitLab, Bitbucket, Gitea, self-hosted
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: GitKnowledgeSourceSpec defines the desired state of GitKnowledgeSource
+              properties:
+                deletionPolicy:
+                  default: Delete
+                  description: |-
+                    DeletionPolicy specifies what happens to ingested documents when this CR is deleted.
+                    Delete (default): Documents are removed from MCP knowledge base.
+                    Retain: Documents remain in MCP knowledge base.
+                  enum:
+                  - Delete
+                  - Retain
+                  type: string
+                exclude:
+                  description: |-
+                    Exclude specifies glob patterns for files to exclude
+                    Example: ["docs/internal/**"]
+                  items:
+                    type: string
+                  type: array
+                maxFileSizeBytes:
+                  description: |-
+                    MaxFileSizeBytes limits the maximum file size to process
+                    Files larger than this are skipped and reported in status
+                  format: int64
+                  type: integer
+                mcpServer:
+                  description: McpServer configures the MCP server endpoint for knowledge
+                    ingestion
+                  properties:
+                    authSecretRef:
+                      description: AuthSecretRef references a Secret containing the
+                        MCP authentication token
+                      properties:
+                        key:
+                          description: Key within the secret containing the value
+                          type: string
+                        name:
+                          description: Name of the secret in the same namespace as
+                            the resource
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    httpTimeoutSeconds:
+                      default: 120
+                      description: |-
+                        HttpTimeoutSeconds is the HTTP timeout in seconds for MCP API calls
+                        Increase this if syncing large documents that take longer to process
+                      maximum: 600
+                      minimum: 5
+                      type: integer
+                    url:
+                      description: |-
+                        URL is the MCP server endpoint
+                        Example: "http://mcp-server.dot-ai.svc:3456"
+                      pattern: ^https?://.*
+                      type: string
+                  required:
+                  - authSecretRef
+                  - url
+                  type: object
+                metadata:
+                  additionalProperties:
+                    type: string
+                  description: Metadata contains key-value pairs attached to all ingested
+                    documents
+                  type: object
+                paths:
+                  description: |-
+                    Paths specifies glob patterns for files to include
+                    Example: ["docs/**/*.md", "README.md"]
+                  items:
+                    type: string
+                  minItems: 1
+                  type: array
+                repository:
+                  description: Repository defines the Git repository to sync documents
+                    from
+                  properties:
+                    branch:
+                      default: main
+                      description: Branch is the Git branch to sync from
+                      type: string
+                    depth:
+                      default: 1
+                      description: |-
+                        Depth is the shallow clone depth for the initial sync
+                        Subsequent syncs use --shallow-since to fetch only recent commits
+                      minimum: 1
+                      type: integer
+                    secretRef:
+                      description: |-
+                        SecretRef references a Secret containing the Git authentication token
+                        The token should be in the specified key within the Secret
+                      properties:
+                        key:
+                          description: Key within the secret containing the value
+                          type: string
+                        name:
+                          description: Name of the secret in the same namespace as
+                            the resource
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    url:
+                      description: |-
+                        URL is the Git repository URL (HTTPS only)
+                        Example: "https://github.com/acme/platform.git"
+                      pattern: ^https://.*
+                      type: string
+                  required:
+                  - url
+                  type: object
+                schedule:
+                  default: '@every 24h'
+                  description: |-
+                    Schedule specifies when to sync using cron syntax or interval format
+                    Supports standard cron (e.g., "0 3 * * *") or intervals (e.g., "@every 24h")
+                    Default: "@every 24h" (once per day, staggered based on CR creation time)
+                  type: string
+              required:
+              - mcpServer
+              - paths
+              - repository
+              type: object
+            status:
+              description: GitKnowledgeSourceStatus defines the observed state of
+                GitKnowledgeSource
+              properties:
+                active:
+                  description: Active indicates whether the controller is actively
+                    syncing this source
+                  type: boolean
+                conditions:
+                  description: Conditions represent the latest available observations
+                    of the GitKnowledgeSource's state
+                  items:
+                    description: Condition contains details for one aspect of the
+                      current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False,
+                          Unknown.
+                        enum:
+                        - "True"
+                        - "False"
+                        - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - message
+                    - reason
+                    - status
+                    - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
+                documentCount:
+                  description: DocumentCount is the number of documents currently
+                    synced
+                  type: integer
+                lastError:
+                  description: LastError contains the most recent error message
+                  type: string
+                lastSyncTime:
+                  description: LastSyncTime is the timestamp of the last successful
+                    sync
+                  format: date-time
+                  type: string
+                lastSyncedCommit:
+                  description: LastSyncedCommit is the Git commit SHA of the last
+                    successful sync
+                  type: string
+                nextScheduledSync:
+                  description: NextScheduledSync is the timestamp of the next scheduled
+                    sync
+                  format: date-time
+                  type: string
+                observedGeneration:
+                  description: ObservedGeneration reflects the generation most recently
+                    observed by the controller
+                  format: int64
+                  type: integer
+                phase:
+                  description: Phase indicates the current sync phase (Syncing, Synced,
+                    Error)
+                  type: string
+                skippedDocuments:
+                  description: SkippedDocuments is the count of documents skipped
+                    due to filters
+                  type: integer
+                skippedFiles:
+                  description: SkippedFiles lists files that were skipped with reasons
+                  items:
+                    description: |-
+                      SkippedFile represents a file or document that was skipped during sync
+                      Used by knowledge source CRDs to report skipped items in status
+                    properties:
+                      path:
+                        description: Path is the file path or identifier relative
+                          to the source
+                        type: string
+                      reason:
+                        description: Reason explains why the file was skipped
+                        type: string
+                    required:
+                    - path
+                    - reason
+                    type: object
+                  type: array
+                syncErrors:
+                  description: SyncErrors is the count of errors in the last sync
+                  type: integer
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: GitKnowledgeSource
+      listKind: GitKnowledgeSourceList
+      plural: gitknowledgesources
+      shortNames:
+      - gks
+      singular: gitknowledgesource
+    conditions:
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: no conflicts found
+      reason: NoConflicts
+      status: "True"
+      type: NamesAccepted
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: the initial names have been accepted
+      reason: InitialNamesAccepted
+      status: "True"
+      type: Established
+    storedVersions:
+    - v1alpha1
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.18.0
+    name: remediationpolicies.dot-ai.devopstoolkit.live
+  spec:
+    conversion:
+      strategy: None
+    group: dot-ai.devopstoolkit.live
+    names:
+      kind: RemediationPolicy
+      listKind: RemediationPolicyList
+      plural: remediationpolicies
+      singular: remediationpolicy
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Whether the policy is ready
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - description: Total events processed
+        jsonPath: .status.totalEventsProcessed
+        name: Events
+        type: integer
+      - description: Successful remediations
+        jsonPath: .status.successfulRemediations
+        name: Successful
+        type: integer
+      - description: Failed remediations
+        jsonPath: .status.failedRemediations
+        name: Failed
+        type: integer
+      - description: Remediation mode
+        jsonPath: .spec.mode
+        name: Mode
+        type: string
+      - description: Number of event selectors
+        jsonPath: .spec.eventSelectors
+        name: Selectors
+        priority: 1
+        type: string
+      - jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: RemediationPolicy is the Schema for the remediationpolicies
+            API
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: spec defines the desired state of RemediationPolicy
+              properties:
+                confidenceThreshold:
+                  default: 0.8
+                  description: Minimum confidence required for automatic execution
+                    (0.0-1.0)
+                  maximum: 1
+                  minimum: 0
+                  type: number
+                eventSelectors:
+                  description: Event selection criteria
+                  items:
+                    description: EventSelector defines criteria for selecting Kubernetes
+                      events
+                    properties:
+                      confidenceThreshold:
+                        description: |-
+                          Minimum confidence required for automatic execution (0.0-1.0)
+                          Overrides the global policy confidenceThreshold when specified
+                        maximum: 1
+                        minimum: 0
+                        type: number
+                      involvedObjectKind:
+                        description: Kind of the involved object
+                        type: string
+                      maxRiskLevel:
+                        description: |-
+                          Maximum risk level allowed for automatic execution
+                          Overrides the global policy maxRiskLevel when specified
+                        enum:
+                        - low
+                        - medium
+                        - high
+                        type: string
+                      message:
+                        description: |-
+                          Message pattern to match against event message (supports regex)
+                          If specified, only events whose message matches this regex pattern will be selected
+                          Empty string acts as wildcard (matches all messages)
+                        type: string
+                      mode:
+                        description: |-
+                          Remediation mode for this specific selector: "manual" or "automatic"
+                          Overrides the global policy mode when specified
+                        enum:
+                        - manual
+                        - automatic
+                        type: string
+                      namespace:
+                        description: Namespace selector
+                        type: string
+                      reason:
+                        description: Reason for the event
+                        type: string
+                      type:
+                        description: Type of event (Warning, Normal)
+                        type: string
+                    type: object
+                  type: array
+                maxRiskLevel:
+                  default: low
+                  description: Maximum risk level allowed for automatic execution
+                  enum:
+                  - low
+                  - medium
+                  - high
+                  type: string
+                mcpAuthSecretRef:
+                  description: |-
+                    McpAuthSecretRef references a Kubernetes Secret containing the MCP authentication token
+                    The controller will include "Authorization: Bearer <token>" header in MCP requests
+                    The Secret must exist in the same namespace as the RemediationPolicy
+                  properties:
+                    key:
+                      description: Key within the secret containing the value
+                      type: string
+                    name:
+                      description: Name of the secret in the same namespace as the
+                        resource
+                      type: string
+                  required:
+                  - key
+                  - name
+                  type: object
+                mcpEndpoint:
+                  description: MCP endpoint URL
+                  type: string
+                mcpTool:
+                  default: remediate
+                  description: MCP tool name (always "remediate")
+                  type: string
+                mode:
+                  default: manual
+                  description: 'Remediation mode: "manual" or "automatic"'
+                  enum:
+                  - manual
+                  - automatic
+                  type: string
+                notifications:
+                  description: Notification configuration
+                  properties:
+                    googleChat:
+                      description: Google Chat notification configuration
+                      properties:
+                        enabled:
+                          default: false
+                          description: Enable Google Chat notifications
+                          type: boolean
+                        notifyOnComplete:
+                          default: true
+                          description: Notify when remediation completes (default
+                            true)
+                          type: boolean
+                        notifyOnStart:
+                          default: false
+                          description: Notify when remediation starts (optional, default
+                            false)
+                          type: boolean
+                        webhookUrl:
+                          description: |-
+                            WebhookUrl - DEPRECATED: Use webhookUrlSecretRef instead
+                            Plain text webhook URL (discouraged for security reasons)
+                            Must start with https://chat.googleapis.com/
+                          type: string
+                        webhookUrlSecretRef:
+                          description: |-
+                            WebhookUrlSecretRef - Kubernetes Secret reference (recommended)
+                            References a Secret in the same namespace as the RemediationPolicy
+                          properties:
+                            key:
+                              description: Key within the secret containing the value
+                              type: string
+                            name:
+                              description: Name of the secret in the same namespace
+                                as the resource
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                      type: object
+                    slack:
+                      description: Slack notification configuration
+                      properties:
+                        channel:
+                          description: Slack channel (for display purposes only)
+                          type: string
+                        enabled:
+                          default: false
+                          description: Enable Slack notifications
+                          type: boolean
+                        notifyOnComplete:
+                          default: true
+                          description: Notify when remediation completes (default
+                            true)
+                          type: boolean
+                        notifyOnStart:
+                          default: false
+                          description: Notify when remediation starts (optional, default
+                            false)
+                          type: boolean
+                        webhookUrl:
+                          description: |-
+                            WebhookUrl - DEPRECATED: Use webhookUrlSecretRef instead
+                            Plain text webhook URL (discouraged for security reasons)
+                          type: string
+                        webhookUrlSecretRef:
+                          description: |-
+                            WebhookUrlSecretRef - Kubernetes Secret reference (recommended)
+                            References a Secret in the same namespace as the RemediationPolicy
+                          properties:
+                            key:
+                              description: Key within the secret containing the value
+                              type: string
+                            name:
+                              description: Name of the secret in the same namespace
+                                as the resource
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                      type: object
+                  type: object
+                persistence:
+                  description: |-
+                    Persistence configuration for cooldown state
+                    When not specified, persistence is enabled by default
+                  properties:
+                    enabled:
+                      default: true
+                      description: |-
+                        Enable cooldown state persistence for this policy
+                        When enabled, cooldown state survives pod restarts via ConfigMap storage
+                      type: boolean
+                  type: object
+                rateLimiting:
+                  description: Rate limiting configuration
+                  properties:
+                    cooldownMinutes:
+                      default: 5
+                      description: Cooldown period in minutes after processing
+                      type: integer
+                    eventsPerMinute:
+                      default: 10
+                      description: Maximum events per minute
+                      type: integer
+                  type: object
+              required:
+              - eventSelectors
+              - mcpAuthSecretRef
+              - mcpEndpoint
+              type: object
+            status:
+              description: status defines the observed state of RemediationPolicy
+              properties:
+                conditions:
+                  description: Current conditions of the policy
+                  items:
+                    description: Condition contains details for one aspect of the
+                      current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False,
+                          Unknown.
+                        enum:
+                        - "True"
+                        - "False"
+                        - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - message
+                    - reason
+                    - status
+                    - type
+                    type: object
+                  type: array
+                failedRemediations:
+                  description: Number of failed remediation calls
+                  format: int64
+                  type: integer
+                lastMcpMessageGenerated:
+                  description: Timestamp of last MCP message generated
+                  format: date-time
+                  type: string
+                lastProcessedEvent:
+                  description: Timestamp of last processed event
+                  format: date-time
+                  type: string
+                lastRateLimitedEvent:
+                  description: Timestamp of last rate limited event
+                  format: date-time
+                  type: string
+                rateLimitedEvents:
+                  description: Number of events that were rate limited
+                  format: int64
+                  type: integer
+                successfulRemediations:
+                  description: Number of successful remediation calls
+                  format: int64
+                  type: integer
+                totalEventsProcessed:
+                  description: Total number of events processed
+                  format: int64
+                  type: integer
+                totalMcpMessagesGenerated:
+                  description: Total number of MCP messages generated
+                  format: int64
+                  type: integer
+              type: object
+          required:
+          - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: RemediationPolicy
+      listKind: RemediationPolicyList
+      plural: remediationpolicies
+      singular: remediationpolicy
+    conditions:
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: no conflicts found
+      reason: NoConflicts
+      status: "True"
+      type: NamesAccepted
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: the initial names have been accepted
+      reason: InitialNamesAccepted
+      status: "True"
+      type: Established
+    storedVersions:
+    - v1alpha1
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.18.0
+    name: resourcesyncconfigs.dot-ai.devopstoolkit.live
+  spec:
+    conversion:
+      strategy: None
+    group: dot-ai.devopstoolkit.live
+    names:
+      kind: ResourceSyncConfig
+      listKind: ResourceSyncConfigList
+      plural: resourcesyncconfigs
+      singular: resourcesyncconfig
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Whether sync is active
+        jsonPath: .status.active
+        name: Active
+        type: boolean
+      - description: Resource types being watched
+        jsonPath: .status.watchedResourceTypes
+        name: Watched
+        type: integer
+      - description: Total resources synced
+        jsonPath: .status.totalResourcesSynced
+        name: Synced
+        type: integer
+      - description: Last sync time
+        jsonPath: .status.lastSyncTime
+        name: Last Sync
+        type: date
+      - description: Sync errors
+        jsonPath: .status.syncErrors
+        name: Errors
+        type: integer
+      - jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            ResourceSyncConfig is the Schema for the resourcesyncconfigs API
+            It configures the controller to watch cluster resources and sync them to MCP
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: spec defines the desired state of ResourceSyncConfig
+              properties:
+                debounceWindowSeconds:
+                  default: 10
+                  description: |-
+                    DebounceWindowSeconds is the time window to collect changes before sending to MCP
+                    Multiple changes to the same resource within this window are batched together
+                  maximum: 300
+                  minimum: 1
+                  type: integer
+                mcpAuthSecretRef:
+                  description: |-
+                    McpAuthSecretRef references a Kubernetes Secret containing the MCP authentication token
+                    The controller will include "Authorization: Bearer <token>" header in MCP requests
+                    The Secret must exist in the same namespace as the ResourceSyncConfig
+                  properties:
+                    key:
+                      description: Key within the secret containing the value
+                      type: string
+                    name:
+                      description: Name of the secret in the same namespace as the
+                        resource
+                      type: string
+                  required:
+                  - key
+                  - name
+                  type: object
+                mcpEndpoint:
+                  description: MCP endpoint URL for resource sync
+                  type: string
+                resyncIntervalMinutes:
+                  default: 60
+                  description: |-
+                    ResyncIntervalMinutes is how often to perform a full resync with MCP
+                    This ensures eventual consistency by reconciling any missed changes
+                  maximum: 1440
+                  minimum: 1
+                  type: integer
+              required:
+              - mcpAuthSecretRef
+              - mcpEndpoint
+              type: object
+            status:
+              description: status defines the observed state of ResourceSyncConfig
+              properties:
+                active:
+                  description: Whether resource syncing is currently active
+                  type: boolean
+                conditions:
+                  description: Current conditions of the config
+                  items:
+                    description: Condition contains details for one aspect of the
+                      current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False,
+                          Unknown.
+                        enum:
+                        - "True"
+                        - "False"
+                        - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - message
+                    - reason
+                    - status
+                    - type
+                    type: object
+                  type: array
+                lastError:
+                  description: Last error message if any
+                  type: string
+                lastResyncTime:
+                  description: Timestamp of last full resync
+                  format: date-time
+                  type: string
+                lastSyncTime:
+                  description: Timestamp of last successful sync to MCP
+                  format: date-time
+                  type: string
+                syncErrors:
+                  description: Number of sync errors
+                  format: int64
+                  type: integer
+                totalResourcesSynced:
+                  description: Total resources synced to MCP
+                  format: int64
+                  type: integer
+                watchedResourceTypes:
+                  description: Number of resource types being watched
+                  type: integer
+              type: object
+          required:
+          - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ResourceSyncConfig
+      listKind: ResourceSyncConfigList
+      plural: resourcesyncconfigs
+      singular: resourcesyncconfig
+    conditions:
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: no conflicts found
+      reason: NoConflicts
+      status: "True"
+      type: NamesAccepted
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: the initial names have been accepted
+      reason: InitialNamesAccepted
+      status: "True"
+      type: Established
+    storedVersions:
+    - v1alpha1
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.18.0
+    name: solutions.dot-ai.devopstoolkit.live
+  spec:
+    conversion:
+      strategy: None
+    group: dot-ai.devopstoolkit.live
+    names:
+      kind: Solution
+      listKind: SolutionList
+      plural: solutions
+      shortNames:
+      - sol
+      singular: solution
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Original user intent
+        jsonPath: .spec.intent
+        name: Intent
+        type: string
+      - description: Solution state
+        jsonPath: .status.state
+        name: State
+        type: string
+      - description: Ready resources
+        jsonPath: .status.resources.ready
+        name: Resources
+        type: string
+      - description: Time since creation
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: Solution is the Schema for the solutions API
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: SolutionSpec defines the desired state of Solution
+              properties:
+                context:
+                  description: Context contains solution-level information not available
+                    in individual resources
+                  properties:
+                    createdBy:
+                      description: CreatedBy identifies the tool or user that created
+                        this solution
+                      type: string
+                    patterns:
+                      description: Patterns lists the organizational patterns applied
+                        to this solution
+                      items:
+                        type: string
+                      type: array
+                    policies:
+                      description: Policies lists the policies applied to this solution
+                      items:
+                        type: string
+                      type: array
+                    rationale:
+                      description: Rationale explains why this solution was deployed
+                        this way
+                      type: string
+                  type: object
+                documentationURL:
+                  description: |-
+                    DocumentationURL points to documentation for this solution
+                    This field is populated by external tools (e.g., dot-ai PRD #228)
+                  pattern: ^https?://.*
+                  type: string
+                intent:
+                  description: |-
+                    Intent describes the original user intent that led to this deployment
+                    Example: "Deploy Go microservice with PostgreSQL database and Redis cache"
+                  minLength: 1
+                  type: string
+                resources:
+                  description: Resources lists all Kubernetes resources that compose
+                    this solution
+                  items:
+                    description: ResourceReference identifies a Kubernetes resource
+                      that is part of this solution
+                    properties:
+                      apiVersion:
+                        description: APIVersion of the resource
+                        type: string
+                      kind:
+                        description: Kind of the resource
+                        type: string
+                      name:
+                        description: Name of the resource
+                        type: string
+                      namespace:
+                        description: Namespace of the resource (if namespaced)
+                        type: string
+                    required:
+                    - apiVersion
+                    - kind
+                    - name
+                    type: object
+                  minItems: 1
+                  type: array
+              required:
+              - intent
+              - resources
+              type: object
+            status:
+              description: SolutionStatus defines the observed state of Solution
+              properties:
+                conditions:
+                  description: Conditions represent the latest available observations
+                    of the solution's state
+                  items:
+                    description: Condition contains details for one aspect of the
+                      current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False,
+                          Unknown.
+                        enum:
+                        - "True"
+                        - "False"
+                        - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - message
+                    - reason
+                    - status
+                    - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
+                observedGeneration:
+                  description: ObservedGeneration reflects the generation most recently
+                    observed by the controller
+                  format: int64
+                  type: integer
+                resources:
+                  description: Resources provides a summary of resource health
+                  properties:
+                    failed:
+                      description: Failed number of resources that have failed
+                      type: integer
+                    ready:
+                      description: Ready number of resources that are ready
+                      type: integer
+                    total:
+                      description: Total number of resources in this solution
+                      type: integer
+                  type: object
+                state:
+                  description: State represents the overall state of the solution
+                  enum:
+                  - pending
+                  - deployed
+                  - degraded
+                  - failed
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: Solution
+      listKind: SolutionList
+      plural: solutions
+      shortNames:
+      - sol
+      singular: solution
+    conditions:
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: no conflicts found
+      reason: NoConflicts
+      status: "True"
+      type: NamesAccepted
+    - lastTransitionTime: "2026-03-30T09:07:31Z"
+      message: the initial names have been accepted
+      reason: InitialNamesAccepted
+      status: "True"
+      type: Established
+    storedVersions:
+    - v1alpha1
+kind: List
+metadata:

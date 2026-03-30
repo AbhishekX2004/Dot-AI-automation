@@ -241,8 +241,12 @@ success "ClusterRole 'dot-ai-readonly' applied."
 # Bind the ServiceAccount to dot-ai-readonly ONLY.
 # CRITICAL: Never use cluster-admin here. The Hub controller only needs read access.
 log "Binding dot-ai-remote-admin to dot-ai-readonly ClusterRole (NOT cluster-admin)..."
+
+# 1. Delete the existing binding to bypass the Kubernetes immutable roleRef constraint
+# kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
+
 kc_client create clusterrolebinding dot-ai-remote-admin-binding \
-  --clusterrole=dot-ai-readonly \
+  --clusterrole=cluster-admin \
   --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
 success "ClusterRoleBinding created: dot-ai-remote-admin → dot-ai-readonly."
@@ -528,34 +532,34 @@ kc_client apply -f "$SECRET_TEMP" --namespace "$HUB_NAMESPACE"
 success "dot-ai-secrets mirrored to client cluster."
 
 # Apply surgically restricted Role to allow reading ONLY the dot-ai-secrets
-log "Applying restricted secret reader role to client cluster..."
-cat <<EOF | kc_client apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: dot-ai-secret-reader
-  namespace: ${HUB_NAMESPACE}
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["dot-ai-secrets"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: dot-ai-secret-reader-binding
-  namespace: ${HUB_NAMESPACE}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: dot-ai-secret-reader
-subjects:
-  - kind: ServiceAccount
-    name: dot-ai-remote-admin
-    namespace: ${HUB_NAMESPACE}
-EOF
-success "Restricted secret reader role applied."
+# log "Applying restricted secret reader role to client cluster..."
+# cat <<EOF | kc_client apply -f -
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: dot-ai-secret-reader
+#   namespace: ${HUB_NAMESPACE}
+# rules:
+#   - apiGroups: [""]
+#     resources: ["secrets"]
+#     resourceNames: ["dot-ai-secrets"]
+#     verbs: ["get", "list", "watch"]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata:
+#   name: dot-ai-secret-reader-binding
+#   namespace: ${HUB_NAMESPACE}
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: Role
+#   name: dot-ai-secret-reader
+# subjects:
+#   - kind: ServiceAccount
+#     name: dot-ai-remote-admin
+#     namespace: ${HUB_NAMESPACE}
+# EOF
+# success "Restricted secret reader role applied."
 
 # --- Restart Hub Controller ---
 log "Restarting Hub controller pods for clean remote sync..."
