@@ -11,3 +11,5 @@ terraform.tfstate.backup
 
 # Crash log
 crash.log
+
+onboard-logs-*/
