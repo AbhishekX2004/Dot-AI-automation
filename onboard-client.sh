@@ -115,7 +115,7 @@ HELM_RELEASE="dot-ai-${CLIENT_ID}"
 SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
 TMP_KUBECONFIG=$(mktemp /tmp/dot-ai-client-kubeconfig-XXXXXX)
 # Ensure temp file is cleaned up on exit
-trap 'rm -f "$TMP_KUBECONFIG"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG"' EXIT
 
 # Locate the ClusterRole file
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
