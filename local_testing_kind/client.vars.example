@@ -1,0 +1,11 @@
+CLIENT_ID="client-a"
+CLIENT_CLUSTER_NAME="client-client-a"
+AI_PROVIDER=openai
+AI_API_KEY=""
+
+# Optional
+# HUB_CLUSTER_NAME="hub-cluster"
+# HELM_TIMEOUT="600"
+# HELM_CHART_PATH="../dot-ai-stack"
+# LOCAL_EMBEDDINGS="true"
+# INGRESS_CLASS="nginx"
