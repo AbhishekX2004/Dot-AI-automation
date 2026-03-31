@@ -124,7 +124,7 @@ SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
 
 # Resolve script directory to locate project-root files (e.g. ClusterRole YAML)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLUSTERROLE_FILE="${SCRIPT_DIR}/../dot-ai-readonly-clusterrole.yaml"
+CLUSTERROLE_FILE="${SCRIPT_DIR}/dot-ai-pure-readonly-role.yaml"
 
 # Set up logging
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -246,10 +246,10 @@ log "Binding dot-ai-remote-admin to dot-ai-readonly ClusterRole (NOT cluster-adm
 # kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
 
 kc_client create clusterrolebinding dot-ai-remote-admin-binding \
-  --clusterrole=cluster-admin \
+  --clusterrole=dot-ai-pure-readonly \
   --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
-success "ClusterRoleBinding created: dot-ai-remote-admin → dot-ai-readonly."
+success "ClusterRoleBinding created: dot-ai-remote-admin → dot-ai-pure-readonly."
 
 # =============================================================================
 # Generate Token & Extract Cluster Connection Details
