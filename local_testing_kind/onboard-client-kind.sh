@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-# =============================================================================
 # onboard-client-kind.sh — Dot-AI Client Onboarding Script (kind / Local Dev)
-# =============================================================================
 # Usage:
 #   ./onboard-client-kind.sh <vars-file>
 #
@@ -49,12 +47,9 @@
 #   CLOUD_PROVIDER, BASE_DOMAIN, AWS_REGION, EKS_CLUSTER_NAME,
 #   GKE_PROJECT, GKE_CLUSTER_NAME, GKE_ZONE, ACP_SERVER_URL, ACP_TOKEN
 #   All cloud CLI prerequisites (aws, gcloud, curl)
-# =============================================================================
 set -euo pipefail
 
-# =============================================================================
 # Helpers
-# =============================================================================
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 
@@ -71,9 +66,7 @@ section() {
 
 require_cmd() { command -v "$1" &>/dev/null || error "Required command not found: $1. Please install it."; }
 
-# =============================================================================
 # Load & Validate Vars File
-# =============================================================================
 
 VARS_FILE="${1:-}"
 [[ -z "$VARS_FILE" ]] && error "Usage: $0 <vars-file>\n  Example: $0 client-a.vars"
@@ -120,11 +113,13 @@ CLIENT_CONTEXT="kind-${CLIENT_CLUSTER_NAME}"
 # Derived resource names
 HUB_NAMESPACE="$CLIENT_ID"
 HELM_RELEASE="dot-ai-${CLIENT_ID}"
-SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
+AGENT_SECRET_NAME="client-${CLIENT_ID}-agent-kubeconfig"
+CONTROLLER_SECRET_NAME="client-${CLIENT_ID}-controller-kubeconfig"
 
 # Resolve script directory to locate project-root files (e.g. ClusterRole YAML)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLUSTERROLE_FILE="${SCRIPT_DIR}/hub-readonly-role.yaml"
+AGENTROLE_FILE="${SCRIPT_DIR}/dot-ai-agent-role.yaml"
 
 # Set up logging
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -136,7 +131,8 @@ log "Logging output to $LOG_FILE"
 
 # Temp file cleanup on EXIT
 TMP_KUBECONFIG=$(mktemp /tmp/dot-ai-client-kubeconfig-XXXXXX)
-HUB_SECRET_KUBECONFIG=$(mktemp /tmp/dot-ai-hub-secret-kubeconfig-XXXXXX)
+CONTROLLER_KUBECONFIG=$(mktemp /tmp/dot-ai-controller-kubeconfig-XXXXXX)
+AGENT_KUBECONFIG=$(mktemp /tmp/dot-ai-agent-kubeconfig-XXXXXX)
 CRDS_TEMP=$(mktemp /tmp/dot-ai-crds-XXXXXX.yaml)
 SYNC_TEMP=$(mktemp /tmp/dot-ai-sync-XXXXXX.yaml)
 SECRET_TEMP=$(mktemp /tmp/dot-ai-secret-XXXXXX.yaml)
@@ -149,13 +145,11 @@ save_and_clean_tmp() {
     fi
   done
 }
-trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CONTROLLER_KUBECONFIG" "$AGENT_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
 
 success "Configuration valid. Client ID: $CLIENT_ID | Hub: $HUB_CLUSTER_NAME | Client cluster: $CLIENT_CLUSTER_NAME"
 
-# =============================================================================
 # Check Prerequisites
-# =============================================================================
 
 section "Checking Prerequisites"
 require_cmd kubectl
@@ -185,12 +179,9 @@ kubectl config get-contexts "$CLIENT_CONTEXT" &>/dev/null \
 
 success "All prerequisites satisfied."
 
-# =============================================================================
 # Fetch Client Cluster Kubeconfig
-# =============================================================================
 # Replaces the entire CLOUD_PROVIDER switch block from onboard-client.sh.
 # kind clusters are local; kubeconfig is retrieved directly via the kind CLI.
-# =============================================================================
 
 section "Fetching Client Cluster Kubeconfig (kind)"
 
@@ -210,13 +201,10 @@ kc_client cluster-info --request-timeout=15s &>/dev/null \
 
 success "Client cluster '$CLIENT_CLUSTER_NAME' is reachable."
 
-# =============================================================================
 # RBAC Setup on Client Cluster
-# =============================================================================
 # SECURITY: The ServiceAccount is bound ONLY to 'dot-ai-readonly' ClusterRole.
 # cluster-admin is NEVER used, enforcing least-privilege access for the Hub
 # controller's remote read operations.
-# =============================================================================
 
 section "Configuring RBAC on Client Cluster (Read-Only)"
 
@@ -225,35 +213,32 @@ log "Ensuring namespace '$HUB_NAMESPACE' exists on client cluster..."
 kc_client create namespace "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 success "Namespace '$HUB_NAMESPACE' ready on client cluster."
 
-# Create the ServiceAccount
-log "Creating dot-ai-remote-admin ServiceAccount on client cluster..."
-kc_client create serviceaccount dot-ai-remote-admin \
-  -n "$HUB_NAMESPACE" \
-  --dry-run=client -o yaml | kc_client apply -f -
-success "ServiceAccount 'dot-ai-remote-admin' created/verified."
+# Create the ServiceAccounts
+log "Creating dual ServiceAccounts on client cluster..."
+kc_client create serviceaccount dot-ai-controller-admin -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+kc_client create serviceaccount dot-ai-agent -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+success "ServiceAccounts created."
 
-# Apply the dot-ai-readonly ClusterRole (from project root)
-# This ClusterRole grants get/list/watch on all relevant resource types.
-log "Applying hub-readonly ClusterRole from: $CLUSTERROLE_FILE"
+# Apply the ClusterRoles
+log "Applying ClusterRoles..."
 kc_client apply -f "$CLUSTERROLE_FILE"
-success "ClusterRole 'hub-readonly' applied."
+kc_client apply -f "$AGENTROLE_FILE"
+success "ClusterRoles 'hub-readonly' and 'dot-ai-agent-role' applied."
 
-# Bind the ServiceAccount to dot-ai-readonly ONLY.
-# CRITICAL: Never use cluster-admin here. The Hub controller only needs read access.
-log "Binding dot-ai-remote-admin to hub-readonly ClusterRole (NOT cluster-admin)..."
-
-# 1. Delete the existing binding to bypass the Kubernetes immutable roleRef constraint
-# kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
-
-kc_client create clusterrolebinding dot-ai-remote-admin-binding \
+# Bind the ServiceAccounts.
+log "Binding identities to specific roles..."
+kc_client create clusterrolebinding dot-ai-controller-admin-binding \
   --clusterrole=hub-readonly \
-  --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
+  --serviceaccount="${HUB_NAMESPACE}:dot-ai-controller-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
-success "ClusterRoleBinding created: dot-ai-remote-admin → hub-readonly."
 
-# =============================================================================
+kc_client create clusterrolebinding dot-ai-agent-binding \
+  --clusterrole=dot-ai-agent-role \
+  --serviceaccount="${HUB_NAMESPACE}:dot-ai-agent" \
+  --dry-run=client -o yaml | kc_client apply -f -
+success "ClusterRoleBindings established successfully."
+
 # Generate Token & Extract Cluster Connection Details
-# =============================================================================
 # CRITICAL kind-specific fix:
 #   The kubeconfig generated by 'kind get kubeconfig' contains the API server
 #   URL as https://127.0.0.1:<host-port>.
@@ -263,16 +248,14 @@ success "ClusterRoleBinding created: dot-ai-remote-admin → hub-readonly."
 #   Solution: use 'docker inspect' to get the client control-plane container's
 #   Docker bridge IP, which IS reachable from Hub pods on the same Docker network.
 #   kind consistently names the control-plane container: <cluster-name>-control-plane
-# =============================================================================
 
 section "Generating ServiceAccount Token & Server URL"
 
-# Generate a long-lived SA token (Kubernetes 1.24+ TokenRequest API)
-log "Generating ServiceAccount token for dot-ai-remote-admin (87600h)..."
-CLIENT_TOKEN=$(kc_client create token dot-ai-remote-admin \
-  -n "$HUB_NAMESPACE" \
-  --duration=87600h)
-success "ServiceAccount token generated."
+# Generate long-lived SA tokens (Kubernetes 1.24+ TokenRequest API)
+log "Generating explicit tokens for Controller and Agent..."
+CONTROLLER_TOKEN=$(kc_client create token dot-ai-controller-admin -n "$HUB_NAMESPACE" --duration=87600h)
+AGENT_TOKEN=$(kc_client create token dot-ai-agent -n "$HUB_NAMESPACE" --duration=87600h)
+success "ServiceAccount tokens generated."
 
 # Get the Docker-internal IP of the client cluster's control-plane container.
 # This is the IP that Hub controller pods can actually route to via Docker bridge.
@@ -304,17 +287,14 @@ CLIENT_CA=$(kc_client config view --minify --raw \
 # fi
 CA_CONFIG="insecure-skip-tls-verify: true"
 
-# =============================================================================
 # Build Hub Secret Kubeconfig
-# =============================================================================
 # This kubeconfig is injected as a Kubernetes Secret on the Hub cluster.
 # The dot-ai-controller reads it to authenticate to the client cluster.
 # It uses the Docker-internal IP (not 127.0.0.1) and the read-only SA token.
-# =============================================================================
 
-section "Building Hub Controller Kubeconfig"
+section "Building Hub Controller & Agent Kubeconfigs"
 
-cat > "$HUB_SECRET_KUBECONFIG" <<EOF
+cat > "$CONTROLLER_KUBECONFIG" <<EOF
 apiVersion: v1
 kind: Config
 current-context: client-cluster
@@ -331,14 +311,32 @@ contexts:
 users:
 - name: dot-ai-controller
   user:
-    token: ${CLIENT_TOKEN}
+    token: ${CONTROLLER_TOKEN}
 EOF
 
-success "Hub Secret kubeconfig built (server: $CLIENT_SERVER)."
+cat > "$AGENT_KUBECONFIG" <<EOF
+apiVersion: v1
+kind: Config
+current-context: client-cluster
+clusters:
+- name: client-cluster
+  cluster:
+    server: ${CLIENT_SERVER}
+    ${CA_CONFIG}
+contexts:
+- name: client-cluster
+  context:
+    cluster: client-cluster
+    user: dot-ai-agent
+users:
+- name: dot-ai-agent
+  user:
+    token: ${AGENT_TOKEN}
+EOF
 
-# =============================================================================
+success "Hub Secret kubeconfigs built (server: $CLIENT_SERVER)."
+
 # Prepare Hub Namespace & Inject Kubeconfig Secret
-# =============================================================================
 
 section "Preparing Hub Namespace: $HUB_NAMESPACE"
 
@@ -349,16 +347,19 @@ kubectl create namespace "$HUB_NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 success "Namespace '$HUB_NAMESPACE' ready on Hub."
 
-# Inject the Hub Secret kubeconfig
-kubectl create secret generic "$SECRET_NAME" \
-  --from-file=config="$HUB_SECRET_KUBECONFIG" \
+# Inject the Hub Secret kubeconfigs
+kubectl create secret generic "$CONTROLLER_SECRET_NAME" \
+  --from-file=config="$CONTROLLER_KUBECONFIG" \
   --namespace "$HUB_NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
-success "Secret '$SECRET_NAME' injected into Hub namespace '$HUB_NAMESPACE'."
+  
+kubectl create secret generic "$AGENT_SECRET_NAME" \
+  --from-file=config="$AGENT_KUBECONFIG" \
+  --namespace "$HUB_NAMESPACE" \
+  --dry-run=client -o yaml | kubectl apply -f -
+success "Secret credentials injected into Hub namespace '$HUB_NAMESPACE'."
 
-# =============================================================================
 # Detect MetalLB LoadBalancer IP & Build nip.io Hostnames
-# =============================================================================
 # MetalLB assigns an IP from var.metallb_ip_range to the NGINX Ingress Service.
 # We use nip.io (a public wildcard DNS service) to construct resolvable hostnames
 # from that IP — no /etc/hosts editing required!
@@ -367,7 +368,6 @@ success "Secret '$SECRET_NAME' injected into Hub namespace '$HUB_NAMESPACE'."
 #   e.g. dot-ai-client-a.172.18.255.200.nip.io → 172.18.255.200
 #
 # This means Ingress routes work out-of-the-box without any local DNS setup.
-# =============================================================================
 
 section "Detecting MetalLB LoadBalancer IP"
 
@@ -396,9 +396,7 @@ DOT_AI_UI_HOST="dot-ai-ui-${CLIENT_ID}.${METALLB_IP}.nip.io"
 log "API host : $DOT_AI_API_HOST"
 log "UI host  : $DOT_AI_UI_HOST"
 
-# =============================================================================
 # Generate Auth Token & Determine Helm AI Key
-# =============================================================================
 
 section "Generating Authentication Token"
 
@@ -418,9 +416,7 @@ if kubectl --context "$HUB_CONTEXT" \
   log "Dot-AI CRDs already present on Hub. Adding --skip-crds to Helm flags."
 fi
 
-# =============================================================================
 # Helm Deployment (Hub cluster)
-# =============================================================================
 
 section "Deploying dot-ai Helm Release: $HELM_RELEASE"
 
@@ -432,8 +428,8 @@ helm upgrade --install "$HELM_RELEASE" "$HELM_CHART_PATH" \
   --kube-context "$HUB_CONTEXT" \
   --namespace "$HUB_NAMESPACE" \
   --timeout "${HELM_TIMEOUT}s" \
-  --set dot-ai.remoteCluster.secretName="$SECRET_NAME" \
-  --set dot-ai-controller.remoteCluster.secretName="$SECRET_NAME" \
+  --set dot-ai.remoteCluster.secretName="$AGENT_SECRET_NAME" \
+  --set dot-ai-controller.remoteCluster.secretName="$CONTROLLER_SECRET_NAME" \
   --set dot-ai.ai.provider="$AI_PROVIDER" \
   --set dot-ai.secrets."$AI_SECRET_KEY"="$AI_API_KEY" \
   --set dot-ai.secrets.auth.token="$SHARED_AUTH_TOKEN" \
@@ -452,13 +448,10 @@ helm upgrade --install "$HELM_RELEASE" "$HELM_CHART_PATH" \
 
 success "Helm release '$HELM_RELEASE' deployed to Hub namespace '$HUB_NAMESPACE'."
 
-# =============================================================================
 # Bootstrap Client Cluster
-# =============================================================================
 # The Hub controller runs in $HUB_NAMESPACE on the Hub and uses the same
 # namespace name for leader election objects on the Client cluster.
 # That namespace MUST exist on the Client before the controller starts syncing.
-# =============================================================================
 
 section "Bootstrapping Client Cluster"
 
@@ -531,36 +524,6 @@ kubectl get secret dot-ai-secrets \
 kc_client apply -f "$SECRET_TEMP" --namespace "$HUB_NAMESPACE"
 success "dot-ai-secrets mirrored to client cluster."
 
-# Apply surgically restricted Role to allow reading ONLY the dot-ai-secrets
-# log "Applying restricted secret reader role to client cluster..."
-# cat <<EOF | kc_client apply -f -
-# apiVersion: rbac.authorization.k8s.io/v1
-# kind: Role
-# metadata:
-#   name: dot-ai-secret-reader
-#   namespace: ${HUB_NAMESPACE}
-# rules:
-#   - apiGroups: [""]
-#     resources: ["secrets"]
-#     resourceNames: ["dot-ai-secrets"]
-#     verbs: ["get", "list", "watch"]
-# ---
-# apiVersion: rbac.authorization.k8s.io/v1
-# kind: RoleBinding
-# metadata:
-#   name: dot-ai-secret-reader-binding
-#   namespace: ${HUB_NAMESPACE}
-# roleRef:
-#   apiGroup: rbac.authorization.k8s.io
-#   kind: Role
-#   name: dot-ai-secret-reader
-# subjects:
-#   - kind: ServiceAccount
-#     name: dot-ai-remote-admin
-#     namespace: ${HUB_NAMESPACE}
-# EOF
-# success "Restricted secret reader role applied."
-
 # --- Restart Hub Controller ---
 log "Restarting Hub controller pods for clean remote sync..."
 kubectl delete pods \
@@ -570,10 +533,7 @@ kubectl delete pods \
   --ignore-not-found
 success "Hub controller pods restarted."
 
-# =============================================================================
 # Done!
-# =============================================================================
-
 section "Onboarding Complete!"
 
 echo ""

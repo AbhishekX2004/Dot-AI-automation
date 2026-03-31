@@ -112,15 +112,20 @@ fi
 # Derived names
 HUB_NAMESPACE="$CLIENT_ID"
 HELM_RELEASE="dot-ai-${CLIENT_ID}"
-SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
+AGENT_SECRET_NAME="client-${CLIENT_ID}-agent-kubeconfig"
+CONTROLLER_SECRET_NAME="client-${CLIENT_ID}-controller-kubeconfig"
 TMP_KUBECONFIG=$(mktemp /tmp/dot-ai-client-kubeconfig-XXXXXX)
+CONTROLLER_KUBECONFIG=$(mktemp /tmp/dot-ai-controller-kubeconfig-XXXXXX)
+AGENT_KUBECONFIG=$(mktemp /tmp/dot-ai-agent-kubeconfig-XXXXXX)
 # Ensure temp file is cleaned up on exit
 trap 'save_and_clean_tmp "$TMP_KUBECONFIG"' EXIT
 
 # Locate the ClusterRole file
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLUSTERROLE_FILE="${SCRIPT_DIR}/hub-readonly-role.yaml"
+AGENTROLE_FILE="${SCRIPT_DIR}/dot-ai-agent-role.yaml"
 [[ -f "$CLUSTERROLE_FILE" ]] || error "ClusterRole file not found: $CLUSTERROLE_FILE"
+[[ -f "$AGENTROLE_FILE" ]] || error "Agent ClusterRole file not found: $AGENTROLE_FILE"
 
 success "Configuration valid. Client ID: $CLIENT_ID | Provider: $CLOUD_PROVIDER"
 
@@ -253,32 +258,40 @@ kc_client() {
   KUBECONFIG="$TMP_KUBECONFIG" kubectl "$@"
 }
 
-log "Creating dot-ai-remote-admin ServiceAccount on client cluster..."
-# Ensure the client-side namespace exists first to hold the SA
+log "Creating dual ServiceAccounts on client cluster..."
+# Ensure the client-side namespace exists first to hold the SAs
 kc_client create namespace "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 
-kc_client create serviceaccount dot-ai-remote-admin -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+kc_client create serviceaccount dot-ai-controller-admin -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+kc_client create serviceaccount dot-ai-agent -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 
-log "Applying hub-readonly ClusterRole from: $CLUSTERROLE_FILE"
+log "Applying ClusterRoles..."
 kc_client apply -f "$CLUSTERROLE_FILE"
+kc_client apply -f "$AGENTROLE_FILE"
 
-log "Binding dot-ai-remote-admin to hub-readonly ClusterRole..."
-kc_client create clusterrolebinding dot-ai-remote-admin-binding \
+log "Binding identities to specific roles..."
+kc_client create clusterrolebinding dot-ai-controller-admin-binding \
   --clusterrole=hub-readonly \
-  --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
+  --serviceaccount="${HUB_NAMESPACE}:dot-ai-controller-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
-success "ClusterRoleBinding created: dot-ai-remote-admin => hub-readonly."
 
-# Generate a token (requires Kubernetes 1.24+ TokenRequest API)
-CLIENT_TOKEN=$(kc_client create token dot-ai-remote-admin -n "$HUB_NAMESPACE" --duration=87600h)
+kc_client create clusterrolebinding dot-ai-agent-binding \
+  --clusterrole=dot-ai-agent-role \
+  --serviceaccount="${HUB_NAMESPACE}:dot-ai-agent" \
+  --dry-run=client -o yaml | kc_client apply -f -
+success "ClusterRoleBindings established successfully."
+
+# Generate explicit tokens (requires Kubernetes 1.24+ TokenRequest API)
+log "Generating explicit tokens for Controller and Agent..."
+CONTROLLER_TOKEN=$(kc_client create token dot-ai-controller-admin -n "$HUB_NAMESPACE" --duration=87600h)
+AGENT_TOKEN=$(kc_client create token dot-ai-agent -n "$HUB_NAMESPACE" --duration=87600h)
 
 # Extract Server URL and CA Data from the original kubeconfig
 CLIENT_SERVER=$(kc_client config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 CLIENT_CA=$(kc_client config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
 
-# Build a clean kubeconfig for the Hub controller
-HUB_SECRET_KUBECONFIG=$(mktemp /tmp/dot-ai-hub-kubeconfig-XXXXXX)
-trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG"' EXIT
+# Build clean kubeconfigs for the Hub pieces
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CONTROLLER_KUBECONFIG" "$AGENT_KUBECONFIG"' EXIT
 
 if [[ -n "$CLIENT_CA" ]]; then
   CA_CONFIG="certificate-authority-data: ${CLIENT_CA}"
@@ -286,7 +299,7 @@ else
   CA_CONFIG="insecure-skip-tls-verify: true"
 fi
 
-cat > "$HUB_SECRET_KUBECONFIG" <<EOF
+cat > "$CONTROLLER_KUBECONFIG" <<EOF
 apiVersion: v1
 kind: Config
 current-context: client-cluster
@@ -303,7 +316,27 @@ contexts:
 users:
 - name: dot-ai-controller
   user:
-    token: ${CLIENT_TOKEN}
+    token: ${CONTROLLER_TOKEN}
+EOF
+
+cat > "$AGENT_KUBECONFIG" <<EOF
+apiVersion: v1
+kind: Config
+current-context: client-cluster
+clusters:
+- name: client-cluster
+  cluster:
+    server: ${CLIENT_SERVER}
+    ${CA_CONFIG}
+contexts:
+- name: client-cluster
+  context:
+    cluster: client-cluster
+    user: dot-ai-agent
+users:
+- name: dot-ai-agent
+  user:
+    token: ${AGENT_TOKEN}
 EOF
 
 # Switch to Hub
@@ -314,12 +347,17 @@ kubectl create namespace "$HUB_NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 success "Namespace '$HUB_NAMESPACE' ready on Hub."
 
-# Inject kubeconfig as a Secret
-kubectl create secret generic "$SECRET_NAME" \
-  --from-file=config="$HUB_SECRET_KUBECONFIG" \
+# Inject kubeconfigs as Secrets
+kubectl create secret generic "$CONTROLLER_SECRET_NAME" \
+  --from-file=config="$CONTROLLER_KUBECONFIG" \
   --namespace "$HUB_NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
-success "Secret '$SECRET_NAME' injected into namespace '$HUB_NAMESPACE'."
+  
+kubectl create secret generic "$AGENT_SECRET_NAME" \
+  --from-file=config="$AGENT_KUBECONFIG" \
+  --namespace "$HUB_NAMESPACE" \
+  --dry-run=client -o yaml | kubectl apply -f -
+success "Secret credentials injected into namespace '$HUB_NAMESPACE'."
 
 # Generate Auth Token
 section "Generating Authentication Token"
@@ -348,8 +386,8 @@ log "UI host  : $DOT_AI_UI_HOST"
 helm upgrade --install "$HELM_RELEASE" "$HELM_CHART_PATH" \
   --namespace "$HUB_NAMESPACE" \
   --timeout "${HELM_TIMEOUT}s" \
-  --set dot-ai.remoteCluster.secretName="$SECRET_NAME" \
-  --set dot-ai-controller.remoteCluster.secretName="$SECRET_NAME" \
+  --set dot-ai.remoteCluster.secretName="$AGENT_SECRET_NAME" \
+  --set dot-ai-controller.remoteCluster.secretName="$CONTROLLER_SECRET_NAME" \
   --set dot-ai.ai.provider="$AI_PROVIDER" \
   --set dot-ai.secrets."$AI_SECRET_KEY"="$AI_API_KEY" \
   --set dot-ai.secrets.auth.token="$SHARED_AUTH_TOKEN" \
@@ -380,7 +418,7 @@ success "Namespace '$HUB_NAMESPACE' ready on client cluster."
 # Migrate CRDs from Hub to Client
 log "Migrating Dot-AI CRDs from Hub to client cluster..."
 CRDS_TEMP=$(mktemp /tmp/dot-ai-crds-XXXXXX.yaml)
-trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CRDS_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CONTROLLER_KUBECONFIG" "$AGENT_KUBECONFIG" "$CRDS_TEMP"' EXIT
 
 kubectl get crds \
   --context "$HUB_CONTEXT" \
@@ -405,7 +443,7 @@ fi
 # Apply ResourceSyncConfig on client cluster
 log "Applying ResourceSyncConfig on client cluster..."
 SYNC_TEMP=$(mktemp /tmp/dot-ai-sync-XXXXXX.yaml)
-trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CONTROLLER_KUBECONFIG" "$AGENT_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP"' EXIT
 
 # The Hub controller reads this CRD remotely, and performs the sync itself.
 # Using the internal Hub service URL ensures it works regardless of NAT hairpinning
@@ -433,7 +471,7 @@ success "ResourceSyncConfig applied on client cluster."
 # Mirror dot-ai-secrets from Hub to Client
 log "Mirroring dot-ai-secrets from Hub to client cluster..."
 SECRET_TEMP=$(mktemp /tmp/dot-ai-secret-XXXXXX.yaml)
-trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$HUB_SECRET_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
+trap 'save_and_clean_tmp "$TMP_KUBECONFIG" "$CONTROLLER_KUBECONFIG" "$AGENT_KUBECONFIG" "$CRDS_TEMP" "$SYNC_TEMP" "$SECRET_TEMP"' EXIT
 
 kubectl get secret dot-ai-secrets \
   --context "$HUB_CONTEXT" \
