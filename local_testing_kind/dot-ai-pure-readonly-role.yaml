@@ -3,18 +3,18 @@ kind: ClusterRole
 metadata:
   name: dot-ai-pure-readonly
 rules:
-  # 1. Pure Read-Only access to all standard Kubernetes and Custom Resources
+  # Read everything
   - apiGroups: ["*"]
     resources: ["*"]
     verbs: ["get", "list", "watch"]
     
-  # 2. Controller Exemption: The Hub controller *must* be allowed to write the sync status
+  # Controller Exemption: The Hub controller *must* be allowed to write the sync status
   # back to the spoke cluster, otherwise its synchronization loop will crash with a 403.
   - apiGroups: ["dot-ai.devopstoolkit.live"]
     resources: ["resourcesyncconfigs/status"]
     verbs: ["get", "update", "patch"]
     
-  # 3. Leader Election: Write access for leases is required by default for the controller-runtime manager
+  # Leader Election: Write access for leases is required by default for the controller-runtime manager
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
