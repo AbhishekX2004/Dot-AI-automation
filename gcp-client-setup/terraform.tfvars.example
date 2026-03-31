@@ -1,0 +1,12 @@
+gcp_project = "YOUR-GCP-PROJECT-ID"
+gcp_region  = "us-central1"
+gcp_zone    = "us-central1-c"
+
+client_name       = "client-a"
+cluster_name      = "dot-ai-client-a"
+environment       = "dev"
+
+# Extreme Cost Optimization Settings for testing
+node_machine_type = "e2-micro"
+node_count        = 1
+spot              = true
