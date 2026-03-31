@@ -234,16 +234,16 @@ success "ServiceAccount 'dot-ai-remote-admin' created/verified."
 
 # Apply the dot-ai-readonly ClusterRole (from project root)
 # This ClusterRole grants get/list/watch on all relevant resource types.
-log "Applying dot-ai-readonly ClusterRole from: $CLUSTERROLE_FILE"
+log "Applying hub-readonly ClusterRole from: $CLUSTERROLE_FILE"
 kc_client apply -f "$CLUSTERROLE_FILE"
-success "ClusterRole 'dot-ai-readonly' applied."
+success "ClusterRole 'hub-readonly' applied."
 
 # Bind the ServiceAccount to dot-ai-readonly ONLY.
 # CRITICAL: Never use cluster-admin here. The Hub controller only needs read access.
-log "Binding dot-ai-remote-admin to dot-ai-readonly ClusterRole (NOT cluster-admin)..."
+log "Binding dot-ai-remote-admin to hub-readonly ClusterRole (NOT cluster-admin)..."
 
 # 1. Delete the existing binding to bypass the Kubernetes immutable roleRef constraint
-kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
+# kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
 
 kc_client create clusterrolebinding dot-ai-remote-admin-binding \
   --clusterrole=hub-readonly \

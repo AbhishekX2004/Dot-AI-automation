@@ -100,6 +100,11 @@ TMP_KUBECONFIG=$(mktemp /tmp/dot-ai-client-kubeconfig-XXXXXX)
 # Ensure temp file is cleaned up on exit
 trap 'rm -f "$TMP_KUBECONFIG"' EXIT
 
+# Locate the ClusterRole file
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLUSTERROLE_FILE="${SCRIPT_DIR}/hub-readonly-role.yaml"
+[[ -f "$CLUSTERROLE_FILE" ]] || error "ClusterRole file not found: $CLUSTERROLE_FILE"
+
 success "Configuration valid. Client ID: $CLIENT_ID | Provider: $CLOUD_PROVIDER"
 
 # Check Prerequisites
@@ -236,10 +241,16 @@ log "Creating dot-ai-remote-admin ServiceAccount on client cluster..."
 kc_client create namespace "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
 
 kc_client create serviceaccount dot-ai-remote-admin -n "$HUB_NAMESPACE" --dry-run=client -o yaml | kc_client apply -f -
+
+log "Applying hub-readonly ClusterRole from: $CLUSTERROLE_FILE"
+kc_client apply -f "$CLUSTERROLE_FILE"
+
+log "Binding dot-ai-remote-admin to hub-readonly ClusterRole..."
 kc_client create clusterrolebinding dot-ai-remote-admin-binding \
-  --clusterrole=cluster-admin \
+  --clusterrole=hub-readonly \
   --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
+success "ClusterRoleBinding created: dot-ai-remote-admin => hub-readonly."
 
 # Generate a token (requires Kubernetes 1.24+ TokenRequest API)
 CLIENT_TOKEN=$(kc_client create token dot-ai-remote-admin -n "$HUB_NAMESPACE" --duration=87600h)
