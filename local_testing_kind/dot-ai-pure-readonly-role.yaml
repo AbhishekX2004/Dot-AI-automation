@@ -3,8 +3,50 @@ kind: ClusterRole
 metadata:
   name: dot-ai-pure-readonly
 rules:
-  # Read everything
-  - apiGroups: ["*"]
+  # 1. Core API Group (Safe default resources only, deliberately omitting "secrets")
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - podtemplates
+      - services
+      - endpoints
+      - namespaces
+      - nodes
+      - persistentvolumes
+      - persistentvolumeclaims
+      - configmaps
+      - serviceaccounts
+      - events
+      - resourcequotas
+      - limitranges
+      - replicationcontrollers
+      - componentstatuses
+      - secrets
+    verbs: ["get", "list", "watch"]
+
+  # 1b. Non-Core API Groups (Wildcard. Safe because secrets only exist in the core group)
+  - apiGroups:
+      - "apps"
+      - "autoscaling"
+      - "batch"
+      - "networking.k8s.io"
+      - "storage.k8s.io"
+      - "rbac.authorization.k8s.io"
+      - "apiextensions.k8s.io"
+      - "policy"
+      - "apiregistration.k8s.io"
+      - "admissionregistration.k8s.io"
+      - "metrics.k8s.io"
+      - "scheduling.k8s.io"
+      - "flowcontrol.apiserver.k8s.io"
+      - "node.k8s.io"
+      - "resource.k8s.io"
+      - "certificates.k8s.io"
+      - "discovery.k8s.io"
+      - "events.k8s.io"
+      - "dot-ai.devopstoolkit.live"
     resources: ["*"]
     verbs: ["get", "list", "watch"]
     

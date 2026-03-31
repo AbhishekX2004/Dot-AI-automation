@@ -124,7 +124,7 @@ SECRET_NAME="client-${CLIENT_ID}-kubeconfig"
 
 # Resolve script directory to locate project-root files (e.g. ClusterRole YAML)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLUSTERROLE_FILE="${SCRIPT_DIR}/dot-ai-pure-readonly-role.yaml"
+CLUSTERROLE_FILE="${SCRIPT_DIR}/hub-readonly-role.yaml"
 
 # Set up logging
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -243,13 +243,13 @@ success "ClusterRole 'dot-ai-readonly' applied."
 log "Binding dot-ai-remote-admin to dot-ai-readonly ClusterRole (NOT cluster-admin)..."
 
 # 1. Delete the existing binding to bypass the Kubernetes immutable roleRef constraint
-# kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
+kc_client delete clusterrolebinding dot-ai-remote-admin-binding --ignore-not-found
 
 kc_client create clusterrolebinding dot-ai-remote-admin-binding \
-  --clusterrole=dot-ai-pure-readonly \
+  --clusterrole=hub-readonly \
   --serviceaccount="${HUB_NAMESPACE}:dot-ai-remote-admin" \
   --dry-run=client -o yaml | kc_client apply -f -
-success "ClusterRoleBinding created: dot-ai-remote-admin → dot-ai-pure-readonly."
+success "ClusterRoleBinding created: dot-ai-remote-admin → hub-readonly."
 
 # =============================================================================
 # Generate Token & Extract Cluster Connection Details
