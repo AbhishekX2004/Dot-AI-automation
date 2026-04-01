@@ -37,6 +37,7 @@ resource "google_container_cluster" "this" {
   # Remove the default node pool to ensure we use our highly-customized, Spot/e2-micro pool.
   remove_default_node_pool = true
   initial_node_count       = 1
+  deletion_protection = false
 
   release_channel {
     channel = "REGULAR"
