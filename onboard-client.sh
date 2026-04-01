@@ -89,8 +89,8 @@ save_and_clean_tmp() {
 
 # Validate CLOUD_PROVIDER
 case "$CLOUD_PROVIDER" in
-  eks|gke|acp|file) ;;
-  *) error "CLOUD_PROVIDER must be one of: eks, gke, acp, file. Got: $CLOUD_PROVIDER" ;;
+  eks|gke|aks|acp|file) ;;
+  *) error "CLOUD_PROVIDER must be one of: eks, gke, aks, acp, file. Got: $CLOUD_PROVIDER" ;;
 esac
 
 # Validate AI_PROVIDER
@@ -137,6 +137,7 @@ require_cmd openssl
 case "$CLOUD_PROVIDER" in
   eks)  require_cmd aws     ;;
   gke)  require_cmd gcloud  ;;
+  aks)  require_cmd az      ;;
   acp)  require_cmd curl    ;;
 esac
 
@@ -187,6 +188,27 @@ case "$CLOUD_PROVIDER" in
       --zone "$GKE_ZONE"
 
     success "GKE kubeconfig written to temp file."
+    ;;
+
+  # AKS
+  aks)
+    _require_var AKS_RESOURCE_GROUP
+    _require_var AKS_CLUSTER_NAME
+
+    log "Fetching AKS kubeconfig for cluster: $AKS_CLUSTER_NAME in $AKS_RESOURCE_GROUP"
+
+    if [[ -n "${AKS_SUBSCRIPTION_ID:-}" ]]; then
+      az account set --subscription "$AKS_SUBSCRIPTION_ID"
+    fi
+
+    # az aks get-credentials writes to ~/.kube/config by default but we can use --file
+    az aks get-credentials \
+      --resource-group "$AKS_RESOURCE_GROUP" \
+      --name "$AKS_CLUSTER_NAME" \
+      --file "$TMP_KUBECONFIG" \
+      --overwrite-existing
+
+    success "AKS kubeconfig written to temp file."
     ;;
 
   # ACP / Generic bearer-token cluster

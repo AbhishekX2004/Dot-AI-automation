@@ -1,0 +1,14 @@
+# Azure specific
+# You can uncomment and set az_subscription_id if you want, or just rely on your `az login` context.
+# az_subscription_id  = "12345678-1234-1234-1234-123456789012"
+az_location         = "eastus"
+
+# Basic Info
+environment         = "dev"
+client_name         = "client-a"
+cluster_name        = ""
+
+# Low Budget Node Options (Using Standard_B2s and a single node)
+node_vm_size        = "Standard_B2s"
+node_disk_size_gb   = 30
+node_count          = 1

@@ -36,7 +36,7 @@ HUB_CONTEXT=arn:aws:eks:us-east-1:123456789012:cluster/dot-ai-eks
 # [REQUIRED] CLIENT CLUSTER — CLOUD PROVIDER
 # -----------------------------------------------------------------------------
 # Which cloud the client cluster lives on.
-# Supported values: eks | gke | acp | file
+# Supported values: eks | gke | aks | acp | file
 CLOUD_PROVIDER=eks
 
 
@@ -61,6 +61,12 @@ ACP_SERVER_URL=https://acp.example.com
 ACP_TOKEN=your-bearer-token-here
 # Set to "true" to skip TLS verification (not recommended for production).
 ACP_INSECURE=false
+
+
+# --- AKS (set if CLOUD_PROVIDER=aks) ----------------------------------------
+AKS_SUBSCRIPTION_ID=your-subscription-id
+AKS_RESOURCE_GROUP=my-aks-rg
+AKS_CLUSTER_NAME=my-aks-cluster
 
 
 # --- File (set if CLOUD_PROVIDER=file) ----------------------------------------
