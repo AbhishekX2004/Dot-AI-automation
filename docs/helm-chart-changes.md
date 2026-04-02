@@ -5,8 +5,9 @@ To transform the Dot-AI stack from a single-cluster tool into a Hub-and-Spoke co
 Instead of rewriting the underlying Golang codebase, we modified the Helm chart to hijack the pods' environment variables and inject a remote `kubeconfig`. 
 
 ## 1. `values.yaml` Additions
-We added a new configuration block to allow users to specify a remote cluster secret:
+We added configuration blocks in their respective sub-charts to allow assigning distinct remote cluster secrets:
 ```yaml
+# In dot-ai-controller/values.yaml and dot-ai/values.yaml
 remoteCluster:
   secretName: "" # Name of the secret containing the client kubeconfig
 ```
@@ -42,7 +43,7 @@ env:
   {{- end }}
 ```
 
-*Result: The controller physically runs on the Hub, but its "brain" is permanently wired to the remote Client API.*
+*Result: The tools run on the Hub, but their operations interact directly with the remote Client API. By using `dot-ai.remoteCluster.secretName` and `dot-ai-controller.remoteCluster.secretName`, we successfully inject dual identities—a read-only Controller agent and an executing AI agent—seamlessly over Helm.*
 
 ## 3. CRD Relocation
 Custom Resource Definitions (CRDs) were moved out of the individual chart `templates/` directories into a centralized `crds/` folder at the root of the `dot-ai-stack`. This allows Helm to correctly install and upgrade CRDs before evaluating the templates that rely on them.

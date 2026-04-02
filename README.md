@@ -11,14 +11,15 @@ By default, Dot-AI monitors the cluster it is installed on; this project decoupl
 The architecture is built on the concept of a **Remote Brain (Hub)** and **Managed Infrastructure (Clients)**.
 
 1.  **The Hub Cluster:** You provision a central EKS cluster (`hub-eks-cluster/`). This cluster runs the AI models, the Web UI, and the management controller. It exposes a public endpoint via an AWS Network Load Balancer (NLB).
-2.  **The client Clusters:** You provision one or more Spoke clusters (`aws-client-setup/`). These do not run the AI stack; they only host your workloads.
+2.  **The Client Clusters:** You provision one or more Spoke clusters (via Terraform in `dummy-client-setups/`). These do not run the AI stack; they only host your workloads.
 3.  **The Onboarding Process:** You run the `onboard-client.sh` script. This script:
-    - Extracts a secure, cloud-agnostic kubeconfig from the Client cluster.
-    - Injects that kubeconfig into the Hub cluster.
+    - Extracts a secure, cloud-agnostic kubeconfig from the Client cluster (EKS, GKE, AKS, or custom).
+    - Provisions fine-grained least-privilege credentials on the client cluster (separating the AI Agent identity from the Controller identity).
+    - Injects these separate kubeconfigs into the Hub cluster.
     - Deploys a "shadow" instance of the Dot-AI stack on the Hub that is permanently wired to the remote Client cluster.
     - Bootstraps the Client cluster with the necessary CRDs and sync rules so it can report back to the Hub.
 
-The result is a single pane of glass where you can manage multiple clusters through a unified, AI-enhanced interface.
+The result is a single pane of glass where you can manage multiple clusters through a unified, AI-enhanced interface, while maintaining strict Role-Based Access Control (RBAC).
 
 ---
 
@@ -33,7 +34,8 @@ graph TB
             ctrl["dot-ai-controller-manager"]
             ui["dot-ai-ui"]
             qdrant["Qdrant + Local Embeddings"]
-            secret["client-kubeconfig Secret"]
+            secret1["client-agent-kubeconfig Secret"]
+            secret2["client-controller-kubeconfig Secret"]
         end
         subgraph ns2["Namespace: another-client"]
             stack2["Separate dot-ai-stack instance"]
@@ -44,19 +46,20 @@ graph TB
         direction TB
         fe["client-frontend namespace"]
         be["client-backend namespace"]
-        chaos["chaos-testing namespace"]
         dotai["dot-ai namespace -- CRDs, sync config, secrets"]
-        le["acme-corp namespace -- leader election lease"]
+        dotaihub["acme-corp namespace -- Dual ServiceAccounts"]
     end
 
-    ctrl -- "Bearer Token over HTTPS" --> client
-    secret -. "provides credentials" .-> ctrl
+    ctrl -- "Read-Only Token over HTTPS" --> client
+    mcp -- "Agent Token over HTTPS" --> client
+    secret1 -. "provides Agent credentials" .-> mcp
+    secret2 -. "provides Controller credentials" .-> ctrl
 
     user(("Operator")) -- "browser" --> ui
     user -- "onboard-client.sh" --> hub
 ```
 
-Each client gets its own isolated namespace on the Hub with a dedicated Helm release, ingress subdomain, and authentication token. The Hub Controller reads the injected kubeconfig Secret and connects to the remote Client cluster to discover and sync resources.
+Each client gets its own isolated namespace on the Hub with a dedicated Helm release, ingress subdomain, and authentication token. The Hub Controller and AI Agent read their respective (and securely scoped) kubeconfig Secrets to connect to the remote Client cluster.
 
 ---
 
@@ -65,11 +68,12 @@ Each client gets its own isolated namespace on the Hub with a dedicated Helm rel
 ```
 .
 ├── hub-eks-cluster/          # Terraform: provisions the Hub EKS cluster + NGINX Ingress
-├── aws-client-setup/         # Terraform: provisions a Client EKS cluster
-├── local_testing/            # Scripts for running the full setup in Kind (Docker)
+├── dummy-client-setups/      # Terraform modules for provisioning Client clusters (AWS, GCP, Azure)
+├── local_testing_kind/       # Scripts for running the full setup locally in Kind (Docker)
 ├── dot-ai-stack/             # Helm umbrella chart (dot-ai + controller + UI + qdrant)
-├── onboard-client.sh         # Production onboarding script (EKS / GKE / ACP / file)
+├── onboard-client.sh         # Production onboarding script (EKS / GKE / AKS / ACP / file)
 ├── client.vars.example       # Template for client configuration
+├── clusterRoles/             # RBAC configurations for Agent and Controller isolation
 └── docs/                     # Detailed architectural and script documentation
 ```
 
@@ -79,13 +83,13 @@ Each client gets its own isolated namespace on the Hub with a dedicated Helm rel
 
 Choose your deployment mode:
 
-### 1. Remote / Production (AWS EKS)
+### 1. Remote / Production (AWS EKS, GKE, AKS)
 - **Step 1:** Provision the [Hub Cluster](hub-eks-cluster/README.md).
-- **Step 2:** Provision a [Client Cluster](aws-client-setup/README.md).
+- **Step 2:** Provision a Client Cluster (e.g., using [AWS Client Setup](dummy-client-setups/aws-client-setup/README.md)).
 - **Step 3:** [Onboard the Client](onboard-client.sh) using a vars file.
 
 ### 2. Local Development (Kind)
-- See the [Local Testing Guide](local_testing/README.md) to spin up two virtual clusters in Docker for rapid iteration without cloud costs.
+- See the [Local Testing Guide](local_testing_kind/README.md) to spin up Hub and Spoke virtual clusters in Docker for rapid iteration without cloud costs.
 
 ---
 
@@ -103,6 +107,10 @@ Choose your deployment mode:
 - [Onboard Client Script Breakdown](docs/onboard-client-script-breakdown.md) -- Detailed look at the production onboarding logic.
 - [Local Testing Script Breakdown](docs/local-testing-script-breakdown.md) -- How we handle Kind-specific networking and automation.
 - [Helm Chart Modifications](docs/helm-chart-changes.md) -- How kubeconfig injection was wired into the core chart.
+- [Cluster Roles & Security Isolation](docs/cluster-roles-security.md) -- Explanation of the dual ServiceAccount and RBAC security boundaries.
+- [EKS Client Setup Guide](docs/client_eks_setup.md) -- End-to-end workflow for onboarding a new client using Amazon EKS.
+- [GKE Client Setup Guide](docs/client_gke_setup.md) -- End-to-end workflow for onboarding a new client using Google Kubernetes Engine (GKE).
+- [AKS Client Setup Guide](docs/client_aks_setup.md) -- End-to-end workflow for onboarding a new client using Azure Kubernetes Service (AKS).
 
 ---
 
@@ -124,7 +132,6 @@ helm uninstall dot-ai-<CLIENT_ID> -n <CLIENT_ID> --kube-context <HUB_CONTEXT>
 kubectl delete namespace <CLIENT_ID> --context <HUB_CONTEXT>
 
 # 2. Destroy Clusters
-cd aws-client-setup/ && terraform destroy
-cd ../hub-eks-cluster/ && terraform destroy
+cd dummy-client-setups/aws-client-setup/ && terraform destroy
+cd ../../hub-eks-cluster/ && terraform destroy
 ```
- of the cross-cluster synchronization mechanism.

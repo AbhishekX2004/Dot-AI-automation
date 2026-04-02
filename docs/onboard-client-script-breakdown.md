@@ -39,66 +39,70 @@ esac
 
 ---
 
-## Section 3 — Create a Static Bearer Token (The Authentication Fix)
+## Section 3 — Create Separated Remote Identities (The Security & Auth Fix)
 
 ```bash
-kc_client create serviceaccount dot-ai-remote-admin -n "$CLIENT_DOT_AI_NAMESPACE"
-kc_client create clusterrolebinding dot-ai-remote-admin-binding \
-  --clusterrole=cluster-admin \
-  --serviceaccount="${CLIENT_DOT_AI_NAMESPACE}:dot-ai-remote-admin"
+kc_client create serviceaccount dot-ai-controller-admin -n "$HUB_NAMESPACE"
+kc_client create serviceaccount dot-ai-agent -n "$HUB_NAMESPACE"
 
-CLIENT_TOKEN=$(kc_client create token dot-ai-remote-admin -n "$CLIENT_DOT_AI_NAMESPACE" --duration=87600h)
+kc_client apply -f "$CLUSTERROLE_FILE"   # hub-readonly-role
+kc_client apply -f "$AGENTROLE_FILE"     # dot-ai-agent-role
+
+kc_client create clusterrolebinding dot-ai-controller-admin-binding ...
+kc_client create clusterrolebinding dot-ai-agent-binding ...
+
+CONTROLLER_TOKEN=$(kc_client create token dot-ai-controller-admin ...)
+AGENT_TOKEN=$(kc_client create token dot-ai-agent ...)
 ```
 
-**The Pitfall:** The kubeconfig fetched from `aws eks update-kubeconfig` contains an `exec:` block that calls the AWS CLI to generate a short-lived token. This works on a developer's laptop, but the Hub controller pod running inside Kubernetes does not have the AWS CLI installed. The exec-based kubeconfig silently fails with an auth error the moment the controller tries to use it.
+**The Pitfall:** The kubeconfig fetched from `aws eks update-kubeconfig` contains an `exec:` block that calls the AWS CLI to generate a short-lived token. The Hub controller pod running inside Kubernetes does not have the AWS CLI installed, meaning it silently loops on auth errors. Furthermore, using a single `cluster-admin` token for both the controller and the AI Agent is a massive security risk.
 
-**The Fix:** We create a dedicated `ServiceAccount` (`dot-ai-remote-admin`) on the client cluster with `cluster-admin` permissions, then use the Kubernetes `TokenRequest` API to generate a long-lived, static Bearer Token (requested for 10 years; EKS caps it at 24 hours). This produces a kubeconfig that any standard Kubernetes client library can use without any cloud credentials.
-
-> **Production Note:** For long-running systems, implement a token rotation mechanism or use IRSA-based authentication.
+**The Fix:** We create **two** dedicated `ServiceAccounts` on the client cluster. One for the Controller (bound to `hub-readonly-role` for safe syncing) and one for the AI Agent (bound to `dot-ai-agent-role` for executing actions). We then use the Kubernetes `TokenRequest` API to generate long-lived, static Bearer Tokens for both. This satisfies the principle of least-privilege while solving our authentication block.
 
 ---
 
-## Section 4 — Build a Clean Kubeconfig for the Hub
+## Section 4 — Build Clean Kubeconfigs for the Hub
 
 ```bash
-cat > "$HUB_SECRET_KUBECONFIG" <<EOF
+cat > "$CONTROLLER_KUBECONFIG" <<EOF
 apiVersion: v1
 kind: Config
-clusters:
-- name: client-cluster
-  cluster:
-    server: ${CLIENT_SERVER}
-    certificate-authority-data: ${CLIENT_CA}
-contexts:
-- name: client-cluster
-  ...
+...
 users:
 - name: dot-ai-controller
   user:
-    token: ${CLIENT_TOKEN}
+    token: ${CONTROLLER_TOKEN}
 EOF
+
+cat > "$AGENT_KUBECONFIG" <<EOF
+... # Same, but uses ${AGENT_TOKEN}
 ```
 
-**What it does:** Constructs a minimal, self-contained kubeconfig containing only the client cluster's API server URL, its CA certificate, and the static Bearer Token from Section 3. If no CA data is present (some providers), it falls back to `insecure-skip-tls-verify: true`.
+**What it does:** Constructs two minimal, self-contained kubeconfigs containing only the client cluster's API server URL, its CA certificate, and the respective static Bearer Tokens from Section 3.
 
-**Why:** The raw kubeconfig from the cloud CLI often contains extra contexts, named clusters, and exec-plugin references. Injecting that directly into a Kubernetes Secret would confuse the controller. A clean, single-context kubeconfig guarantees the controller always connects to the right cluster.
+**Why:** The raw kubeconfig from the cloud CLI often contains extra contexts, named clusters, and exec-plugin references. Injecting that directly into a Kubernetes Secret would confuse the pods. Clean, dual-context kubeconfigs guarantee the controller and MCP server uniquely connect to the right cluster with the correct scopes securely.
 
 ---
 
-## Section 5 — Prepare Hub Namespace & Inject Secret
+## Section 5 — Prepare Hub Namespace & Inject Secrets
 
 ```bash
 kubectl create namespace "$HUB_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl create secret generic "$SECRET_NAME" \
-  --from-file=config="$HUB_SECRET_KUBECONFIG" \
+kubectl create secret generic "$CONTROLLER_SECRET_NAME" \
+  --from-file=config="$CONTROLLER_KUBECONFIG" \
+  --namespace "$HUB_NAMESPACE" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic "$AGENT_SECRET_NAME" \
+  --from-file=config="$AGENT_KUBECONFIG" \
   --namespace "$HUB_NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-**What it does:** Creates a dedicated namespace on the Hub cluster (named after `CLIENT_ID`, e.g. `acme-corp`) and injects the clean kubeconfig as a Kubernetes Secret. The `--dry-run=client -o yaml | kubectl apply -f -` pattern makes the operation **idempotent** — safe to re-run without errors.
+**What it does:** Creates a dedicated namespace on the Hub cluster (named after `CLIENT_ID`) and injects the two clean kubeconfigs as isolated Kubernetes Secrets. The `--dry-run=client -o yaml | kubectl apply -f -` pattern makes the operation **idempotent**.
 
-**Why:** Each client gets its own namespace on the Hub. Isolating Helm releases, secrets, and ingress rules per namespace prevents one client's configuration from leaking into another.
+**Why:** Isolating Helm releases, secrets, and credentials prevents one client's configuration from leaking into another, and separates the read-only operations from the mutable AI Agent operations.
 
 ---
 
@@ -107,17 +111,16 @@ kubectl create secret generic "$SECRET_NAME" \
 ```bash
 helm upgrade --install "$HELM_RELEASE" "$HELM_CHART_PATH" \
   --namespace "$HUB_NAMESPACE" \
-  --set dot-ai.remoteCluster.secretName="$SECRET_NAME" \
-  --set dot-ai-controller.remoteCluster.secretName="$SECRET_NAME" \
+  --set dot-ai.remoteCluster.secretName="$AGENT_SECRET_NAME" \
+  --set dot-ai-controller.remoteCluster.secretName="$CONTROLLER_SECRET_NAME" \
   --set dot-ai.ingress.host="dot-ai-${CLIENT_ID}.${BASE_DOMAIN}" \
-  --set dot-ai-ui.ingress.host="dot-ai-ui-${CLIENT_ID}.${BASE_DOMAIN}" \
   ...
 ```
 
 **What it does:** Deploys (or upgrades) a scoped `dot-ai-stack` Helm release into the client's Hub namespace. Key values set:
-- `remoteCluster.secretName` — tells the chart where to mount the kubeconfig Secret (the "brain transplant").
-- Per-client ingress hostnames like `dot-ai-acme-corp.<BASE_DOMAIN>` for the MCP API and `dot-ai-ui-acme-corp.<BASE_DOMAIN>` for the Web UI.
-- A freshly generated auth token shared between the UI and backend.
+- `dot-ai.remoteCluster.secretName` — tells the MCP server to mount the Agent's kubeconfig Secret.
+- `dot-ai-controller.remoteCluster.secretName` — tells the Controller to mount the Read-Only kubeconfig Secret.
+- Per-client ingress hostnames like `dot-ai-acme-corp.<BASE_DOMAIN>`.
 
 **Why:** `helm upgrade --install` is idempotent. Re-running the onboarding script (e.g. after updating vars) safely upgrades the existing release instead of failing.
 
