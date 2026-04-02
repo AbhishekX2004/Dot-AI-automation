@@ -3,9 +3,9 @@
 # client.vars — Dot-AI Client Onboarding Configuration
 # =============================================================================
 # Copy this file to a client-specific name, e.g.:
-#   cp client.vars acme-corp.vars
+#   cp client.vars.example client-id.vars
 # Fill in the required fields, then run:
-#   ./onboard-client.sh acme-corp.vars
+#   ./onboard-client.sh client-id.vars
 #
 # Lines starting with # are comments. Do NOT quote values unless they
 # contain spaces. The script sources this file directly.
@@ -16,12 +16,12 @@
 # [REQUIRED] CLIENT IDENTITY
 # -----------------------------------------------------------------------------
 # A unique slug for this client. Used as:
-#   - the Hub namespace name     (e.g. "acme-corp")
-#   - the Helm release name      (e.g. "dot-ai-acme-corp")
-#   - the kubeconfig secret name (e.g. "client-acme-corp-kubeconfig")
-#   - subdomain prefix for ingress (e.g. "acme-corp.hub.example.com")
+#   - the Hub namespace name     (e.g. "client-id")
+#   - the Helm release name      (e.g. "dot-ai-client-id")
+#   - the kubeconfig secret name (e.g. "client-client-id-kubeconfig")
+#   - subdomain prefix for ingress (e.g. "client-id.hub.example.com")
 # Rules: lowercase, hyphens only, no dots or underscores.
-CLIENT_ID=acme-corp
+CLIENT_ID=client-id
 
 
 # -----------------------------------------------------------------------------
@@ -42,14 +42,14 @@ CLOUD_PROVIDER=eks
 
 # --- EKS (set if CLOUD_PROVIDER=eks) ----------------------------------------
 AWS_REGION=us-east-1
-EKS_CLUSTER_NAME=dot-ai-client-acme-corp
+EKS_CLUSTER_NAME=client-eks-cluster-name
 # Optional: AWS profile to use. Leave blank to use the default/env-var profile.
 AWS_PROFILE=
 
 
 # --- GKE (set if CLOUD_PROVIDER=gke) ----------------------------------------
-GKE_PROJECT=my-gcp-project
-GKE_CLUSTER_NAME=client-prod-cluster
+GKE_PROJECT=gcp-project-id
+GKE_CLUSTER_NAME=client-gke-cluster-name
 # Use a regional cluster? Set GKE_ZONE to the region (e.g. us-central1)
 # Use a zonal cluster?  Set GKE_ZONE to the zone   (e.g. us-central1-a)
 GKE_ZONE=us-central1-a
@@ -64,9 +64,9 @@ ACP_INSECURE=false
 
 
 # --- AKS (set if CLOUD_PROVIDER=aks) ----------------------------------------
-AKS_SUBSCRIPTION_ID=your-subscription-id
-AKS_RESOURCE_GROUP=my-aks-rg
-AKS_CLUSTER_NAME=my-aks-cluster
+AKS_SUBSCRIPTION_ID=azure-subscription-id
+AKS_RESOURCE_GROUP=azure-resource-group
+AKS_CLUSTER_NAME=azure-aks-cluster-name
 
 
 # --- File (set if CLOUD_PROVIDER=file) ----------------------------------------

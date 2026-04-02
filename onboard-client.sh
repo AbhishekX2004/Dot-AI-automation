@@ -7,9 +7,9 @@
 #   ./onboard-client.sh <vars-file>
 #
 # Example:
-#   cp client.vars acme-corp.vars
-#   # edit acme-corp.vars
-#   ./onboard-client.sh acme-corp.vars
+#   cp client.vars.example client-id.vars
+#   # edit client-id.vars
+#   ./onboard-client.sh client-id.vars
 #
 # What this script does:
 #   1.  Loads and validates the client vars file
@@ -42,7 +42,7 @@ require_cmd() { command -v "$1" &>/dev/null || error "Required command not found
 
 # Load Vars File
 VARS_FILE="${1:-}"
-[[ -z "$VARS_FILE" ]] && error "Usage: $0 <vars-file>\n  Example: $0 acme-corp.vars"
+[[ -z "$VARS_FILE" ]] && error "Usage: $0 <vars-file>\n  Example: $0 client-id.vars"
 [[ -f "$VARS_FILE" ]] || error "vars file not found: $VARS_FILE"
 
 # shellcheck source=/dev/null
@@ -67,7 +67,7 @@ _require_var AI_API_KEY
 
 # Validate CLIENT_ID format (lowercase letters, numbers, hyphens only)
 if ! echo "$CLIENT_ID" | grep -qE '^[a-z0-9][a-z0-9-]*[a-z0-9]$'; then
-  error "CLIENT_ID '$CLIENT_ID' is invalid. Use only lowercase letters, numbers, and hyphens (e.g. acme-corp)."
+  error "CLIENT_ID '$CLIENT_ID' is invalid. Use only lowercase letters, numbers, and hyphens (e.g. client-id)."
 fi
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
