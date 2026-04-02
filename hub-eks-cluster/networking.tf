@@ -1,7 +1,3 @@
-# Default VPC & Subnets
-# Using the AWS default VPC avoids NAT Gateway / custom VPC costs.
-# The default VPC exists in every region and has a default subnet per AZ.
-
 # Look up the default VPC in the chosen region.
 data "aws_vpc" "default" {
   default = true
