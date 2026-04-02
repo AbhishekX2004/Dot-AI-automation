@@ -1,4 +1,3 @@
+logs/
 *.log
 *.vars
-pitfalls.txt
-onboard-logs-*/

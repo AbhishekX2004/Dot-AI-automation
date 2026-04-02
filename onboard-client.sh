@@ -71,7 +71,7 @@ if ! echo "$CLIENT_ID" | grep -qE '^[a-z0-9][a-z0-9-]*[a-z0-9]$'; then
 fi
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-LOG_DIR="onboard-logs-${CLIENT_ID}-${TIMESTAMP}"
+LOG_DIR="logs/onboard-logs-${CLIENT_ID}-${TIMESTAMP}"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/onboard.log"
 
@@ -122,8 +122,8 @@ trap 'save_and_clean_tmp "$TMP_KUBECONFIG"' EXIT
 
 # Locate the ClusterRole file
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLUSTERROLE_FILE="${SCRIPT_DIR}/hub-readonly-role.yaml"
-AGENTROLE_FILE="${SCRIPT_DIR}/dot-ai-agent-role.yaml"
+CLUSTERROLE_FILE="${SCRIPT_DIR}/clusterRoles/hub-readonly-role.yaml"
+AGENTROLE_FILE="${SCRIPT_DIR}/clusterRoles/dot-ai-agent-role.yaml"
 [[ -f "$CLUSTERROLE_FILE" ]] || error "ClusterRole file not found: $CLUSTERROLE_FILE"
 [[ -f "$AGENTROLE_FILE" ]] || error "Agent ClusterRole file not found: $AGENTROLE_FILE"
 
